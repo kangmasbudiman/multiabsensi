@@ -8,7 +8,7 @@ import type { Profile, Department, Shift } from '@/types'
 interface Employee extends Profile {
   face_data?: unknown
   face_photo_url?: string | null
-  face_photo_path?: string | null
+  face_photo_url?: string | null
   has_face_registration?: boolean
 }
 
@@ -552,7 +552,7 @@ export default function EmployeesClient({ employees, departments, shifts, positi
                   </td>
                   <td className="px-5 py-4">
                     {(() => {
-                      const hasPath = emp.face_photo_path || emp.face_photo_url
+                      const hasPath = emp.face_photo_url
                       if (hasPath) {
                         return <FacePhotoButton empId={emp.id} name={emp.full_name} onOpen={setFaceModal} />
                       }
@@ -923,7 +923,7 @@ export default function EmployeesClient({ employees, departments, shifts, positi
                         })()}
                       </div>
                       {(() => {
-                        const hasPhoto = editEmployee.face_photo_path || editEmployee.face_photo_url
+                        const hasPhoto = editEmployee.face_photo_url
                         if (hasPhoto) {
                           return (
                             <div className="flex items-center gap-4">
