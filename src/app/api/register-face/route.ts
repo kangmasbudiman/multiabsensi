@@ -88,16 +88,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Gagal upload foto wajah', detail: uploadError.message }, { status: 500 })
     }
 
-    // Generate signed URL
+    // Generate signed URL (short-lived, will be regenerated on demand)
     const { data: urlData, error: urlError } = await admin.storage
       .from('attendance-photos')
-      .createSignedUrl(photoPath, 31536000) // 1 year
+      .createSignedUrl(photoPath, 300) // 5 minutes — just for immediate display
 
     if (urlError) {
       console.error('[register-face] Signed URL error:', urlError.message)
     }
 
-    const photoUrl = urlData?.signedUrl ?? ''
+    // Store the storage path inside face_photo_url using a special prefix
+    // so the face-photo endpoint can extract it to generate fresh signed URLs
+    const photoUrl = `storage://attendance-photos/${photoPath}`
 
     // 5. Encrypt descriptor and geometry
     console.log('[register-face] Encrypting descriptor...')

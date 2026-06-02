@@ -13,43 +13,57 @@ export async function GET(req: NextRequest) {
 
   const admin = createAdminClient()
 
-  // Get the storage path (not the signed URL — those are not stored)
   const { data: reg } = await admin
     .from('face_registrations')
-    .select('face_photo_path, face_photo_url')
+    .select('face_photo_url')
     .eq('user_id', userId)
     .maybeSingle()
 
-  if (!reg) {
+  if (!reg || !reg.face_photo_url) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
   }
 
-  // Prefer storage path, fallback to extracting from signed URL
-  let photoPath = reg.face_photo_path
+  let photoPath: string | null = null
+  const storedUrl = reg.face_photo_url
 
-  if (!photoPath && reg.face_photo_url) {
-    try {
-      const parsed = new URL(reg.face_photo_url)
-      const segments = parsed.pathname.split('/')
-      const objIdx = segments.indexOf('object')
-      if (objIdx >= 0 && segments.length > objIdx + 2) {
-        photoPath = segments.slice(objIdx + 2).join('/')
+  // Format 1: storage://bucket/path (our new format)
+  if (storedUrl.startsWith('storage://')) {
+    const withoutPrefix = storedUrl.replace('storage://', '')
+    const slashIdx = withoutPrefix.indexOf('/')
+    if (slashIdx > 0) {
+      const bucket = withoutPrefix.substring(0, slashIdx)
+      photoPath = withoutPrefix.substring(slashIdx + 1)
+
+      const { data, error } = await admin.storage
+        .from(bucket)
+        .createSignedUrl(photoPath, 300) // 5 minutes
+
+      if (error || !data?.signedUrl) {
+        return NextResponse.json({ error: 'Failed to generate URL' }, { status: 500 })
       }
-    } catch {}
+
+      return NextResponse.json({ url: data.signedUrl })
+    }
   }
 
-  if (!photoPath) {
-    return NextResponse.json({ error: 'No photo' }, { status: 404 })
-  }
+  // Format 2: Extract path from legacy Supabase signed URL
+  try {
+    const parsed = new URL(storedUrl)
+    const segments = parsed.pathname.split('/')
+    const objIdx = segments.indexOf('object')
+    if (objIdx >= 0 && segments.length > objIdx + 2) {
+      photoPath = segments.slice(objIdx + 2).join('/')
 
-  // Generate short-lived signed URL (5 minutes)
-  const { data, error } = await admin.storage
-    .from('attendance-photos')
-    .createSignedUrl(photoPath, 300)
+      const { data, error } = await admin.storage
+        .from('attendance-photos')
+        .createSignedUrl(photoPath, 300)
 
-  if (error || !data?.signedUrl) {
-    return NextResponse.json({ error: 'Failed to generate URL' }, { status: 500 })
-  }
+      if (data?.signedUrl) {
+        return NextResponse.json({ url: data.signedUrl })
+      }
+    }
+  } catch {}
 
-  return NextResponse.json({ url: data.signedUrl })
+  // Format 3: Return the URL as-is (might be a valid signed URL still)
+  return NextResponse.json({ url: storedUrl })
 }

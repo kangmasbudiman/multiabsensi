@@ -5,7 +5,6 @@ export const dynamic = 'force-dynamic'
 
 // GET /api/public-face-photo?user_id=xxx&org_code=xxx
 // Returns a short-lived signed URL for the employee's registered face photo.
-// Used during the confirmation step of 1:N face identification.
 export async function GET(req: NextRequest) {
   const userId = req.nextUrl.searchParams.get('user_id')
   const orgCode = req.nextUrl.searchParams.get('org_code')
@@ -51,5 +50,24 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ url: null })
   }
 
-  return NextResponse.json({ url: faceReg.face_photo_url })
+  const storedUrl = faceReg.face_photo_url
+
+  // Format: storage://bucket/path
+  if (storedUrl.startsWith('storage://')) {
+    const withoutPrefix = storedUrl.replace('storage://', '')
+    const slashIdx = withoutPrefix.indexOf('/')
+    if (slashIdx > 0) {
+      const bucket = withoutPrefix.substring(0, slashIdx)
+      const photoPath = withoutPrefix.substring(slashIdx + 1)
+
+      const { data } = await admin.storage
+        .from(bucket)
+        .createSignedUrl(photoPath, 60) // 60-second expiry
+
+      return NextResponse.json({ url: data?.signedUrl ?? null })
+    }
+  }
+
+  // Fallback: return URL as-is
+  return NextResponse.json({ url: storedUrl })
 }
