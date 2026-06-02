@@ -8,7 +8,6 @@ import type { Profile, Department, Shift } from '@/types'
 interface Employee extends Profile {
   face_data?: unknown
   face_photo_url?: string | null
-  face_photo_url?: string | null
   has_face_registration?: boolean
 }
 
