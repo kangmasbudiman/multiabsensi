@@ -112,19 +112,18 @@ export async function POST(req: NextRequest) {
     const encryptedGeometry = geometry ? encryptFaceData(geometry) : null
 
     // 6. Upsert face registration
-    // Only include columns that exist in the schema
+    // Only use columns that actually exist in the schema:
+    // user_id, face_data, face_descriptor_encrypted, face_photo_url, registered_at, updated_at
     const upsertData: Record<string, unknown> = {
       user_id,
       face_descriptor_encrypted: encryptedDescriptor,
-      face_photo_path: photoPath,
       face_photo_url: photoUrl,
       updated_at: new Date().toISOString(),
     }
 
-    // face_data_encrypted column may not exist in older schemas
-    // Descriptor is sufficient for 1:N face identification
-    if (encryptedGeometry) {
-      upsertData.face_data = geometry // Store as plain JSON in legacy column
+    // Store geometry in legacy face_data column
+    if (geometry) {
+      upsertData.face_data = geometry
     }
 
     console.log('[register-face] Upserting face registration for user:', user_id)

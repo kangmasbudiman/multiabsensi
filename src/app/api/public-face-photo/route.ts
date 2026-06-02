@@ -43,27 +43,13 @@ export async function GET(req: NextRequest) {
   // Get face registration photo
   const { data: faceReg } = await admin
     .from('face_registrations')
-    .select('face_photo_path, face_photo_url')
+    .select('face_photo_url')
     .eq('user_id', userId)
     .maybeSingle()
 
-  if (!faceReg) {
+  if (!faceReg || !faceReg.face_photo_url) {
     return NextResponse.json({ url: null })
   }
 
-  // Prefer storage path (newer) over legacy signed URL
-  if (faceReg.face_photo_path) {
-    const { data: urlData } = await admin.storage
-      .from('attendance-photos')
-      .createSignedUrl(faceReg.face_photo_path, 60) // 60-second expiry
-
-    return NextResponse.json({ url: urlData?.signedUrl ?? null })
-  }
-
-  // Fallback to legacy face_photo_url
-  if (faceReg.face_photo_url) {
-    return NextResponse.json({ url: faceReg.face_photo_url })
-  }
-
-  return NextResponse.json({ url: null })
+  return NextResponse.json({ url: faceReg.face_photo_url })
 }
