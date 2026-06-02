@@ -42,7 +42,7 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json()
-  const { user_id, org_code, photo_base64, face_verified, face_confidence } = body
+  const { user_id, org_code, photo_base64, face_verified, face_confidence, latitude, longitude } = body
 
   if (!user_id || !org_code || !photo_base64) {
     return NextResponse.json({ error: 'Data tidak lengkap' }, { status: 400 })
@@ -59,6 +59,35 @@ export async function POST(req: NextRequest) {
 
   if (!org) {
     return NextResponse.json({ error: 'Kode perusahaan tidak valid' }, { status: 404 })
+  }
+
+  // Geofencing check: validate GPS location against office locations
+  if (latitude != null && longitude != null) {
+    const { data: locations } = await admin
+      .from('office_locations')
+      .select('name, latitude, longitude, radius_meters')
+      .eq('org_id', org.id)
+      .eq('is_active', true)
+
+    if (locations && locations.length > 0) {
+      const insideAny = locations.some(loc => {
+        const R = 6371000
+        const dLat = (loc.latitude - latitude) * Math.PI / 180
+        const dLng = (loc.longitude - longitude) * Math.PI / 180
+        const a = Math.sin(dLat / 2) ** 2 +
+          Math.cos(latitude * Math.PI / 180) * Math.cos(loc.latitude * Math.PI / 180) *
+          Math.sin(dLng / 2) ** 2
+        const dist = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+        return dist <= loc.radius_meters
+      })
+
+      if (!insideAny) {
+        return NextResponse.json(
+          { error: 'Absensi ditolak — Anda berada di luar area kantor.' },
+          { status: 403 }
+        )
+      }
+    }
   }
 
   // Validasi user

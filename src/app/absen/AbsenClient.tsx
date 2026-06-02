@@ -1,8 +1,9 @@
 'use client'
 
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { Check, Camera, ArrowLeft, Building2, ScanFace, User, ShieldCheck } from 'lucide-react'
+import { Check, Camera, ArrowLeft, Building2, ScanFace, User, ShieldCheck, MapPin } from 'lucide-react'
 
+type OfficeLocation = { name: string; latitude: number; longitude: number; radius_meters: number }
 type Org = { id: string; name: string; address?: string | null }
 
 type Step = 'org' | 'scan' | 'confirm' | 'result'
@@ -25,6 +26,12 @@ export default function AbsenClient() {
 
   // Face registration info
   const [faceRegCount, setFaceRegCount] = useState(0)
+
+  // Geofencing
+  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null)
+  const [officeLocations, setOfficeLocations] = useState<OfficeLocation[]>([])
+  const [locationStatus, setLocationStatus] = useState<'unknown' | 'checking' | 'inside' | 'outside' | 'denied'>('unknown')
+  const [nearestOffice, setNearestOffice] = useState<{ name: string; distance: number } | null>(null)
 
   // Camera
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -97,6 +104,17 @@ export default function AbsenClient() {
   }, [step, modelsReady, cameraReady])
 
   // --- Org lookup ---
+  // Haversine distance between two GPS points (meters)
+  const getDistance = (lat1: number, lng1: number, lat2: number, lng2: number): number => {
+    const R = 6371000 // Earth radius in meters
+    const dLat = (lat2 - lat1) * Math.PI / 180
+    const dLng = (lng2 - lng1) * Math.PI / 180
+    const a = Math.sin(dLat / 2) ** 2 +
+      Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+      Math.sin(dLng / 2) ** 2
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+  }
+
   const searchOrg = async () => {
     if (!orgCode.trim()) return
     setLoading(true)
@@ -108,6 +126,51 @@ export default function AbsenClient() {
       setOrg({ id: data.org.id, name: data.org.name, address: data.org.address })
       setFaceRegCount(data.face_registration_count ?? 0)
       try { localStorage.setItem('absenku_org_code', orgCode.trim()) } catch {}
+
+      // Fetch office locations for geofencing
+      const locRes = await fetch(`/api/public-locations?org_code=${encodeURIComponent(orgCode.trim())}`)
+      const locData = await locRes.json()
+      const locations: OfficeLocation[] = locData.locations ?? []
+      setOfficeLocations(locations)
+
+      // If locations exist, check GPS
+      if (locations.length > 0) {
+        setLocationStatus('checking')
+        try {
+          const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
+            navigator.geolocation.getCurrentPosition(resolve, reject, {
+              enableHighAccuracy: true,
+              timeout: 10000,
+              maximumAge: 30000,
+            })
+          })
+          const { latitude: lat, longitude: lng } = pos.coords
+          setUserLocation({ lat, lng })
+
+          // Check if inside any office geofence
+          let insideAny = false
+          let nearest: { name: string; distance: number } | null = null
+
+          for (const loc of locations) {
+            const dist = getDistance(lat, lng, loc.latitude, loc.longitude)
+            if (dist <= loc.radius_meters) {
+              insideAny = true
+            }
+            if (!nearest || dist < nearest.distance) {
+              nearest = { name: loc.name, distance: Math.round(dist) }
+            }
+          }
+
+          setNearestOffice(nearest)
+          setLocationStatus(insideAny ? 'inside' : 'outside')
+        } catch {
+          setLocationStatus('denied')
+        }
+      } else {
+        // No office locations configured — skip geofencing
+        setLocationStatus('inside')
+      }
+
       setStep('scan')
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Gagal')
@@ -311,6 +374,8 @@ export default function AbsenClient() {
           photo_base64: base64,
           face_verified: true,
           face_confidence: identifiedEmployee.similarity,
+          latitude: userLocation?.lat ?? null,
+          longitude: userLocation?.lng ?? null,
         }),
       })
       const data = await res.json()
@@ -523,6 +588,46 @@ export default function AbsenClient() {
                       Belum ada karyawan yang mendaftarkan data wajah di perusahaan ini.
                       Silakan hubungi admin perusahaan.
                     </p>
+                  </div>
+                )}
+
+                {/* Geofencing status */}
+                {locationStatus === 'checking' && (
+                  <div className="bg-blue-50 border border-blue-200 text-blue-700 px-4 py-3 rounded-xl text-sm text-center flex items-center justify-center gap-2">
+                    <div className="w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
+                    Memeriksa lokasi Anda...
+                  </div>
+                )}
+
+                {locationStatus === 'denied' && (
+                  <div className="bg-amber-50 border border-amber-200 text-amber-700 px-4 py-3 rounded-xl text-sm">
+                    <div className="flex items-center gap-2 mb-1">
+                      <MapPin className="w-4 h-4 shrink-0" />
+                      <p className="font-medium">Izin lokasi ditolak</p>
+                    </div>
+                    <p className="text-xs text-amber-600">
+                      Aktifkan izin lokasi di browser untuk verifikasi kehadiran. Absensi tetap bisa dilakukan tanpa lokasi.
+                    </p>
+                  </div>
+                )}
+
+                {locationStatus === 'outside' && nearestOffice && (
+                  <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm">
+                    <div className="flex items-center gap-2 mb-1">
+                      <MapPin className="w-4 h-4 shrink-0" />
+                      <p className="font-medium">📍 Di luar area absensi</p>
+                    </div>
+                    <p className="text-xs text-red-600">
+                      Anda berada <span className="font-bold">{nearestOffice.distance}m</span> dari <span className="font-semibold">{nearestOffice.name}</span>.
+                      Absensi hanya bisa dilakukan di area kantor.
+                    </p>
+                  </div>
+                )}
+
+                {locationStatus === 'inside' && officeLocations.length > 0 && (
+                  <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-2 rounded-xl text-xs flex items-center gap-2">
+                    <MapPin className="w-3.5 h-3.5 shrink-0" />
+                    <span>Lokasi terverifikasi — Anda berada di area kantor</span>
                   </div>
                 )}
 
