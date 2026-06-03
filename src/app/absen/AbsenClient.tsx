@@ -27,6 +27,30 @@ export default function AbsenClient() {
   // Face registration info
   const [faceRegCount, setFaceRegCount] = useState(0)
 
+  // Device fingerprint — simple hash of browser features
+  const getDeviceFingerprint = (): string => {
+    try {
+      const canvas = document.createElement('canvas')
+      const ctx = canvas.getContext('2d')
+      ctx!.textBaseline = 'top'
+      ctx!.font = '14px Arial'
+      ctx!.fillText('fingerprint', 2, 2)
+      const canvasData = canvas.toDataURL()
+      const nav = navigator
+      const raw = `${nav.userAgent}|${nav.language}|${screen.width}x${screen.height}|${canvasData.slice(-50)}`
+      // Simple hash
+      let hash = 0
+      for (let i = 0; i < raw.length; i++) {
+        const char = raw.charCodeAt(i)
+        hash = ((hash << 5) - hash) + char
+        hash |= 0
+      }
+      return Math.abs(hash).toString(36)
+    } catch {
+      return 'unknown'
+    }
+  }
+
   // Geofencing
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null)
   const [officeLocations, setOfficeLocations] = useState<OfficeLocation[]>([])
@@ -50,6 +74,8 @@ export default function AbsenClient() {
   const consecutiveFailuresRef = useRef(0)
   const prevDescriptorRef = useRef<number[] | null>(null)
   const liveFramesRef = useRef(0) // count of frames with different descriptors
+  const blinkDetectedRef = useRef(false)
+  const prevEarRef = useRef<number | null>(null)
 
   // Identified employee & confirmation
   const [identifiedEmployee, setIdentifiedEmployee] = useState<IdentifiedEmployee | null>(null)
@@ -214,6 +240,8 @@ export default function AbsenClient() {
     consecutiveFailuresRef.current = 0
     prevDescriptorRef.current = null
     liveFramesRef.current = 0
+    blinkDetectedRef.current = false
+    prevEarRef.current = null
 
     const scanLoop = async () => {
       if (!isScanningRef.current || !videoRef.current || !canvasRef.current || !modelsReady) {
@@ -236,6 +264,18 @@ export default function AbsenClient() {
         if (faceResult) {
           setFaceBox(faceResult.box)
 
+          // Blink detection: track EAR changes
+          // A real person blinks every 2-5 seconds
+          // A video/photo has constant EAR
+          if (prevEarRef.current !== null) {
+            const earDrop = prevEarRef.current - faceResult.ear
+            // EAR drop > 0.05 = blink detected
+            if (earDrop > 0.05) {
+              blinkDetectedRef.current = true
+            }
+          }
+          prevEarRef.current = faceResult.ear
+
           // Liveness check: compare with previous descriptor
           // Real faces have micro-movements → descriptors vary slightly
           // A held photo → descriptors are nearly identical
@@ -252,10 +292,12 @@ export default function AbsenClient() {
           }
           prevDescriptorRef.current = faceResult.descriptor
 
-          // Require at least 2 live frames before calling API
-          // This ensures the face is real (not a static photo)
-          if (liveFramesRef.current < 2) {
-            setScanStatus('Mendeteksi wajah... (verifikasi keaslian)')
+          // Require: 2+ live frames AND blink detected
+          // This ensures the face is real (not static photo or video)
+          if (liveFramesRef.current < 2 || !blinkDetectedRef.current) {
+            setScanStatus(blinkDetectedRef.current
+              ? 'Mendeteksi wajah... (verifikasi keaslian)'
+              : 'Mendeteksi wajah... (kedipkan mata Anda)')
             // Continue scanning without API call
             if (isScanningRef.current) {
               requestAnimationFrame(scanLoop)
@@ -376,6 +418,7 @@ export default function AbsenClient() {
           face_confidence: identifiedEmployee.similarity,
           latitude: userLocation?.lat ?? null,
           longitude: userLocation?.lng ?? null,
+          device_fingerprint: getDeviceFingerprint(),
         }),
       })
       const data = await res.json()
@@ -750,6 +793,21 @@ export default function AbsenClient() {
                   Apakah ini Anda?
                 </p>
 
+                {/* Location required warning */}
+                {officeLocations.length > 0 && locationStatus !== 'inside' && (
+                  <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl text-sm text-center">
+                    <p className="font-medium">📍 Verifikasi lokasi diperlukan</p>
+                    <p className="text-xs mt-1 text-red-600">
+                      {locationStatus === 'denied'
+                        ? 'Aktifkan izin lokasi di browser Anda untuk melakukan absensi.'
+                        : locationStatus === 'outside'
+                          ? 'Anda berada di luar area kantor. Absensi hanya bisa dilakukan di lokasi kantor.'
+                          : 'Memverifikasi lokasi Anda...'
+                      }
+                    </p>
+                  </div>
+                )}
+
                 {/* Action buttons */}
                 <div className="flex gap-3">
                   <button
@@ -760,7 +818,7 @@ export default function AbsenClient() {
                   </button>
                   <button
                     onClick={confirmAndSubmit}
-                    disabled={submitting}
+                    disabled={submitting || (officeLocations.length > 0 && locationStatus !== 'inside')}
                     className="flex-1 py-3 bg-teal-600 hover:bg-teal-700 disabled:opacity-50 text-white rounded-xl font-semibold transition-colors text-sm"
                   >
                     {submitting
