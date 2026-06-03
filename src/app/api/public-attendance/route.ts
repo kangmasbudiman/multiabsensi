@@ -129,7 +129,7 @@ export async function POST(req: NextRequest) {
   // Decode base64 photo
   const photoBytes = Buffer.from(photo_base64, 'base64')
   const now = new Date()
-  const today = now.toISOString().split('T')[0]
+  const today = now.toLocaleDateString('sv-SE', { timeZone: 'Asia/Jakarta' })
 
   // Upload photo
   const faceStatus = face_verified ? 'verified' : (face_verified === false ? 'failed' : 'skipped')
