@@ -721,15 +721,23 @@ export default function AbsenClient() {
           )}
 
           {/* Recent Attendance Card */}
-          {step === 'scan' && recentAttendance.length > 0 && (
+          {step === 'scan' && org && (
             <div className="bg-white rounded-2xl shadow-2xl overflow-hidden">
               <div className="px-5 py-4 border-b border-gray-100">
                 <h3 className="text-sm font-bold text-gray-800 flex items-center gap-2">
                   <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
                   Absen Terbaru Hari Ini
-                  <span className="text-xs font-normal text-gray-400">({recentAttendance.length} karyawan)</span>
+                  {recentAttendance.length > 0 && (
+                    <span className="text-xs font-normal text-gray-400">({recentAttendance.length} karyawan)</span>
+                  )}
                 </h3>
               </div>
+              {recentAttendance.length === 0 ? (
+                <div className="px-5 py-6 text-center">
+                  <p className="text-sm text-gray-400">Belum ada absensi hari ini</p>
+                  <p className="text-xs text-gray-300 mt-1">Jadilah yang pertama absen! 🎉</p>
+                </div>
+              ) : (
               <div className="divide-y divide-gray-50 max-h-[360px] overflow-y-auto">
                 {recentAttendance.map((rec, i) => {
                   const time = rec.check_in_time
@@ -765,6 +773,7 @@ export default function AbsenClient() {
                   )
                 })}
               </div>
+              )}
             </div>
           )}
 
