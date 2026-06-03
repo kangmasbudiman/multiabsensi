@@ -25,11 +25,13 @@ export async function GET(req: NextRequest) {
 
   // Use Indonesia timezone for "today"
   const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Jakarta' })
+  // Also check yesterday for records saved with UTC date
+  const yesterday = new Date(Date.now() - 86400000).toLocaleDateString('sv-SE', { timeZone: 'Asia/Jakarta' })
 
   const { data } = await admin
     .from('attendances')
     .select('check_in_time, check_out_time, face_verification_status, profiles!inner(full_name, employee_id, position)')
-    .eq('date', today)
+    .in('date', [today, yesterday])
     .eq('profiles.org_id', org.id)
     .not('check_in_time', 'is', null)
     .order('check_in_time', { ascending: false })
