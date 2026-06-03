@@ -12,7 +12,7 @@ export async function GET(req: NextRequest) {
   }
 
   const admin = createAdminClient()
-  const today = new Date().toISOString().split('T')[0]
+  const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Jakarta' })
 
   const { data: att } = await admin
     .from('attendances')
@@ -114,7 +114,7 @@ export async function POST(req: NextRequest) {
     const { data: recentFromDevice } = await admin
       .from('attendances')
       .select('user_id')
-      .eq('date', new Date().toISOString().split('T')[0])
+      .eq('date', new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Jakarta' }))
       .neq('user_id', user_id)
       .gte('created_at', tenMinutesAgo)
       .limit(3)

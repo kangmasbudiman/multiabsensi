@@ -23,7 +23,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ records: [] })
   }
 
-  const today = new Date().toISOString().split('T')[0]
+  // Use Indonesia timezone for "today"
+  const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Jakarta' })
 
   const { data } = await admin
     .from('attendances')

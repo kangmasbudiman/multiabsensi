@@ -17,6 +17,72 @@ type IdentifiedEmployee = {
   photoUrl: string | null
 }
 
+// Auto-redirect result component — shows success then returns to scan after 2.5s
+function AutoRedirectResult({
+  type,
+  time,
+  employeeName,
+  onRedirect,
+}: {
+  type: 'checkin' | 'checkout'
+  time: string
+  employeeName?: string
+  onRedirect: () => void
+}) {
+  const [countdown, setCountdown] = useState(3)
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCountdown(prev => {
+        if (prev <= 1) {
+          clearInterval(timer)
+          onRedirect()
+          return 0
+        }
+        return prev - 1
+      })
+    }, 1000)
+    return () => clearInterval(timer)
+  }, [onRedirect])
+
+  return (
+    <div className="bg-white rounded-2xl shadow-2xl p-8 text-center">
+      <div className="w-20 h-20 bg-green-50 rounded-full flex items-center justify-center mx-auto mb-5">
+        <div className="w-14 h-14 bg-green-500 rounded-full flex items-center justify-center">
+          <Check className="w-8 h-8 text-white" />
+        </div>
+      </div>
+      <h2 className="text-xl font-bold text-gray-900 mb-1">
+        {type === 'checkin' ? 'Check-in Berhasil!' : 'Check-out Berhasil!'}
+      </h2>
+      <p className="text-sm text-gray-500 mb-5">{employeeName}</p>
+      <div className="bg-teal-50 rounded-xl px-6 py-4 mb-6">
+        <p className="text-3xl font-bold text-teal-600">{time} WIB</p>
+      </div>
+      {type === 'checkin' && (
+        <p className="text-xs text-gray-400 mb-4">Jangan lupa check-out sebelum pulang</p>
+      )}
+      <div className="space-y-2">
+        <div className="w-full bg-gray-100 rounded-full h-1.5 overflow-hidden">
+          <div
+            className="bg-teal-500 h-full rounded-full transition-all duration-1000 ease-linear"
+            style={{ width: `${((3 - countdown) / 3) * 100}%` }}
+          />
+        </div>
+        <p className="text-xs text-gray-400">
+          Kembali ke pemindai wajah dalam {countdown} detik...
+        </p>
+        <button
+          onClick={onRedirect}
+          className="text-xs text-teal-600 hover:text-teal-700 font-medium"
+        >
+          Kembali sekarang
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export default function AbsenClient() {
   const [orgCode, setOrgCode] = useState('')
   const [org, setOrg] = useState<Org | null>(null)
@@ -914,26 +980,22 @@ export default function AbsenClient() {
 
           {/* Step: Result */}
           {step === 'result' && result && (
-            <div className="bg-white rounded-2xl shadow-2xl p-8 text-center">
-              <div className="w-20 h-20 bg-green-50 rounded-full flex items-center justify-center mx-auto mb-5">
-                <div className="w-14 h-14 bg-green-500 rounded-full flex items-center justify-center">
-                  <Check className="w-8 h-8 text-white" />
-                </div>
-              </div>
-              <h2 className="text-xl font-bold text-gray-900 mb-1">
-                {result.type === 'checkin' ? 'Check-in Berhasil!' : 'Check-out Berhasil!'}
-              </h2>
-              <p className="text-sm text-gray-500 mb-5">{identifiedEmployee?.full_name}</p>
-              <div className="bg-teal-50 rounded-xl px-6 py-4 mb-6">
-                <p className="text-3xl font-bold text-teal-600">{result.time} WIB</p>
-              </div>
-              {result.type === 'checkin' && (
-                <p className="text-xs text-gray-400 mb-4">Jangan lupa check-out sebelum pulang</p>
-              )}
-              <button onClick={reset} className="w-full py-3.5 bg-teal-600 hover:bg-teal-700 text-white rounded-xl font-semibold transition-colors">
-                Selesai
-              </button>
-            </div>
+            <AutoRedirectResult
+              type={result.type}
+              time={result.time}
+              employeeName={identifiedEmployee?.full_name}
+              onRedirect={() => {
+                stopCamera()
+                setIdentifiedEmployee(null)
+                setCapturedPhoto(null)
+                setTodayStatus(null)
+                setSubmitting(false)
+                setFaceBox(null)
+                setScanning(false)
+                setScanStatus('Mendeteksi wajah...')
+                setStep('scan')
+              }}
+            />
           )}
         </div>
       </main>
