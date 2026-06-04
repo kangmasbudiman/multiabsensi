@@ -19,9 +19,36 @@ export default function ShiftsClient({ shifts, orgId }: { shifts: Shift[]; orgId
     work_days: [1, 2, 3, 4, 5] as number[],
   })
 
+  const openQuickSaturday = () => {
+    const existing = shifts.find(s => s.work_days.includes(1))
+    setEditShift(null)
+    setForm({
+      name: 'Sabtu',
+      start_time: existing ? existing.start_time.slice(0, 5) : '08:00',
+      end_time: existing ? existing.end_time.slice(0, 5) : '17:00',
+      late_tolerance_minutes: existing ? existing.late_tolerance_minutes : 15,
+      allowance: existing ? existing.allowance : 0,
+      work_days: [6],
+    })
+    setShowModal(true)
+  }
+
   const openAdd = () => {
     setEditShift(null)
     setForm({ name: '', start_time: '08:00', end_time: '17:00', late_tolerance_minutes: 15, allowance: 0, work_days: [1,2,3,4,5] })
+    setShowModal(true)
+  }
+
+  const openDuplicate = (s: Shift) => {
+    setEditShift(null)
+    setForm({
+      name: s.name + ' (Salinan)',
+      start_time: s.start_time.slice(0, 5),
+      end_time: s.end_time.slice(0, 5),
+      late_tolerance_minutes: s.late_tolerance_minutes,
+      allowance: s.allowance,
+      work_days: [...s.work_days],
+    })
     setShowModal(true)
   }
 
@@ -60,10 +87,18 @@ export default function ShiftsClient({ shifts, orgId }: { shifts: Shift[]; orgId
           <h1 className="text-2xl font-bold text-gray-800">Manajemen Shift</h1>
           <p className="text-sm text-gray-400 mt-0.5">{shifts.length} shift terdaftar</p>
         </div>
-        <button onClick={openAdd}
-          className="px-4 py-2.5 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-sm font-semibold transition-colors flex items-center gap-2">
-          + Tambah Shift
-        </button>
+        <div className="flex items-center gap-2">
+          {!shifts.some(s => s.work_days.length === 1 && s.work_days.includes(6)) && (
+            <button onClick={openQuickSaturday}
+              className="px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-sm font-semibold transition-colors flex items-center gap-2">
+              Setup Sabtu
+            </button>
+          )}
+          <button onClick={openAdd}
+            className="px-4 py-2.5 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-sm font-semibold transition-colors flex items-center gap-2">
+            + Tambah Shift
+          </button>
+        </div>
       </div>
 
       {shifts.length === 0 ? (
@@ -87,6 +122,7 @@ export default function ShiftsClient({ shifts, orgId }: { shifts: Shift[]; orgId
                   </p>
                 </div>
                 <div className="flex gap-1">
+                  <button onClick={() => openDuplicate(s)} className="p-1.5 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded-lg text-sm" title="Duplikat shift">📋</button>
                   <button onClick={() => openEdit(s)} className="p-1.5 text-gray-400 hover:text-teal-600 hover:bg-teal-50 rounded-lg text-sm">✏️</button>
                   <button onClick={() => handleDelete(s.id)} className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg text-sm">🗑️</button>
                 </div>
@@ -145,6 +181,32 @@ export default function ShiftsClient({ shifts, orgId }: { shifts: Shift[]; orgId
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Hari Kerja</label>
+                <div className="flex gap-2 mb-2">
+                  <button type="button" onClick={() => setForm(f => ({ ...f, work_days: [1,2,3,4,5] }))}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors border ${
+                      form.work_days.length === 5 && form.work_days.includes(1) && !form.work_days.includes(6)
+                        ? 'bg-teal-600 text-white border-teal-600'
+                        : 'bg-white text-gray-600 border-gray-200 hover:border-teal-400'
+                    }`}>
+                    Senin - Jumat
+                  </button>
+                  <button type="button" onClick={() => setForm(f => ({ ...f, work_days: [6] }))}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors border ${
+                      form.work_days.length === 1 && form.work_days.includes(6)
+                        ? 'bg-amber-500 text-white border-amber-500'
+                        : 'bg-white text-gray-600 border-gray-200 hover:border-amber-400'
+                    }`}>
+                    Sabtu
+                  </button>
+                  <button type="button" onClick={() => setForm(f => ({ ...f, work_days: [1,2,3,4,5,6,7] }))}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors border ${
+                      form.work_days.length === 7
+                        ? 'bg-blue-500 text-white border-blue-500'
+                        : 'bg-white text-gray-600 border-gray-200 hover:border-blue-400'
+                    }`}>
+                    Semua Hari
+                  </button>
+                </div>
                 <div className="flex gap-1.5">
                   {[1,2,3,4,5,6,7].map(d => (
                     <button key={d} type="button" onClick={() => toggleDay(d)}
