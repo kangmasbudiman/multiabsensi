@@ -263,7 +263,9 @@ export default function Sidebar({ profile, collapsed = false, isInspecting = fal
   const APPROVER_POSITIONS = ['direktur', 'sekertaris', 'kabid', 'kabag', 'kepala_ruangan', 'kasie_keperawatan', 'kasie_penunjang']
   const isApprover = APPROVER_POSITIONS.includes(profile.position ?? '')
 
-  const orgName = profile.organizations?.name ?? 'AbsenKu Platform'
+  const orgName = isSuperAdmin
+    ? (profile.organizations?.app_name ?? 'AbsenKu')
+    : (profile.organizations?.name ?? 'AbsenKu Platform')
   const appName = profile.organizations?.app_name ?? 'AbsenKu'
   const companyCode = profile.organizations?.company_code ?? 'SUPER'
 
@@ -401,7 +403,7 @@ export default function Sidebar({ profile, collapsed = false, isInspecting = fal
           <div className={`rounded-lg px-3 py-2 border ${isSuperAdmin ? 'bg-purple-500/10 border-purple-500/20' : isApprover ? 'bg-blue-500/10 border-blue-500/20' : 'bg-white/5 border-white/10'}`}>
             <p className="text-xs text-gray-400 truncate">{orgName}</p>
             <p className={`text-sm font-bold tracking-widest ${isSuperAdmin ? 'text-purple-400' : isApprover ? 'text-blue-400' : 'text-teal-400'}`}>
-              {companyCode}
+              {isSuperAdmin ? appName.toUpperCase() : companyCode}
             </p>
           </div>
         </div>
