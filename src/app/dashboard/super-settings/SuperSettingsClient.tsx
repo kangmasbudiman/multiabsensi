@@ -50,19 +50,17 @@ export default function SuperSettingsClient({ orgs, pending, rejected, totalUser
   const handleSavePlatformName = async () => {
     const val = platformName.trim()
     if (!val) return alert('Nama platform tidak boleh kosong')
-    if (orgs.length === 0) return alert('Tidak ada perusahaan aktif')
     setSavingName(true)
     try {
-      const orgIds = orgs.map(o => o.id)
+      // Update ALL organizations (not just approved)
       const { error } = await supabase
         .from('organizations')
         .update({ app_name: val })
-        .in('id', orgIds)
+        .neq('id', '00000000-0000-0000-0000-000000000000') // update all rows
       if (error) {
         alert('Gagal menyimpan: ' + error.message)
         return
       }
-      // Force full reload to update sidebar & all pages
       window.location.reload()
     } catch (e) {
       alert('Error: ' + (e instanceof Error ? e.message : 'Gagal menyimpan'))

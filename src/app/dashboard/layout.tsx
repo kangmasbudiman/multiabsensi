@@ -43,7 +43,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
   const { data: org } = profile.org_id
     ? await supabase.from('organizations').select('name, company_code, app_name').eq('id', profile.org_id).single()
     : profile.role === 'super_admin'
-      ? await supabase.from('organizations').select('name, company_code, app_name').eq('is_active', true).limit(1).single()
+      ? await supabase.from('organizations').select('name, company_code, app_name').not('app_name', 'is', null).limit(1).single()
       : { data: null }
 
   const fullProfile = { ...profile, organizations: org ?? null }
