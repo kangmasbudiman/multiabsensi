@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useMemo } from 'react'
+import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 
 interface Company {
@@ -41,6 +42,8 @@ const STATUS_LABEL: Record<string, string> = {
 }
 
 export default function CompaniesClient({ companies }: { companies: Company[] }) {
+  const supabase = createClient()
+  const router = useRouter()
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [industryFilter, setIndustryFilter] = useState('')
@@ -48,12 +51,13 @@ export default function CompaniesClient({ companies }: { companies: Company[] })
   const [detail, setDetail] = useState<Company | null>(null)
   const [resetResult, setResetResult] = useState<{ email: string; password: string } | null>(null)
   const [resetting, setResetting] = useState(false)
+  const [deleteId, setDeleteId] = useState<string | null>(null)
+  const [deleting, setDeleting] = useState(false)
   const PER_PAGE = 10
 
   const handleResetPassword = async (email: string) => {
     setResetting(true)
     setResetResult(null)
-    const supabase = createClient()
     const { data } = await supabase.functions.invoke('reset-user-password', {
       body: { email },
     })
@@ -61,6 +65,28 @@ export default function CompaniesClient({ companies }: { companies: Company[] })
       setResetResult({ email, password: data.new_password })
     }
     setResetting(false)
+  }
+
+  const handleDelete = async (id: string) => {
+    setDeleting(true)
+    // Delete related profiles first
+    await supabase.from('profiles').delete().eq('org_id', id)
+    // Delete related data
+    await supabase.from('shift_schedules').delete().eq('org_id', id)
+    await supabase.from('shifts').delete().eq('org_id', id)
+    await supabase.from('holidays').delete().eq('org_id', id)
+    await supabase.from('office_locations').delete().eq('org_id', id)
+    await supabase.from('departments').delete().eq('org_id', id)
+    // Delete the organization
+    const { error } = await supabase.from('organizations').delete().eq('id', id)
+    if (error) {
+      alert('Gagal menghapus: ' + error.message)
+    } else {
+      setDetail(null)
+      setDeleteId(null)
+      router.refresh()
+    }
+    setDeleting(false)
   }
 
   const industries = useMemo(() =>
@@ -246,12 +272,21 @@ export default function CompaniesClient({ companies }: { companies: Company[] })
                       </span>
                     </td>
                     <td className="px-5 py-4 text-center">
-                      <button
-                        onClick={() => setDetail(company)}
-                        className="text-xs px-3 py-1.5 border border-gray-200 text-gray-600 hover:border-teal-300 hover:text-teal-600 rounded-lg transition-colors font-medium"
-                      >
-                        Detail
-                      </button>
+                      <div className="flex items-center justify-center gap-1">
+                        <button
+                          onClick={() => setDetail(company)}
+                          className="text-xs px-3 py-1.5 border border-gray-200 text-gray-600 hover:border-teal-300 hover:text-teal-600 rounded-lg transition-colors font-medium"
+                        >
+                          Detail
+                        </button>
+                        <button
+                          onClick={() => setDeleteId(company.id)}
+                          className="text-xs px-2 py-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
+                          title="Hapus perusahaan"
+                        >
+                          🗑️
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -412,12 +447,56 @@ export default function CompaniesClient({ companies }: { companies: Company[] })
                 </div>
               )}
 
+              {/* Delete company */}
+              <div className="pt-2 border-t border-gray-100">
+                <button
+                  onClick={() => setDeleteId(detail.id)}
+                  className="w-full py-2.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl text-sm font-semibold transition-colors flex items-center justify-center gap-2"
+                >
+                  🗑️ Hapus Perusahaan
+                </button>
+                <p className="text-[10px] text-red-400 text-center mt-1">Menghapus semua data: karyawan, shift, absensi, lokasi</p>
+              </div>
+
               <button
                 onClick={() => { setDetail(null); setResetResult(null) }}
                 className="w-full py-2.5 border border-gray-200 text-gray-600 rounded-xl text-sm font-semibold hover:bg-gray-50 transition-colors"
               >
                 Tutup
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete confirmation dialog */}
+      {deleteId && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
+            <div className="text-center">
+              <div className="w-14 h-14 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                <span className="text-2xl">⚠️</span>
+              </div>
+              <h3 className="font-bold text-gray-900 text-lg mb-1">Hapus Perusahaan?</h3>
+              <p className="text-sm text-gray-500 mb-4">
+                Semua data terkait (karyawan, shift, absensi, lokasi) akan dihapus permanen. Aksi ini tidak bisa dibatalkan.
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => setDeleteId(null)}
+                  disabled={deleting}
+                  className="flex-1 py-2.5 border border-gray-200 text-gray-700 rounded-xl text-sm font-semibold hover:bg-gray-50 transition-colors"
+                >
+                  Batal
+                </button>
+                <button
+                  onClick={() => handleDelete(deleteId)}
+                  disabled={deleting}
+                  className="flex-1 py-2.5 bg-red-500 hover:bg-red-600 disabled:opacity-60 text-white rounded-xl text-sm font-semibold transition-colors"
+                >
+                  {deleting ? 'Menghapus...' : 'Ya, Hapus'}
+                </button>
+              </div>
             </div>
           </div>
         </div>
