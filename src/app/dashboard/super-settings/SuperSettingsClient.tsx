@@ -39,16 +39,65 @@ const tabs = [
 ]
 
 export default function SuperSettingsClient({ orgs, pending, rejected, totalUsers, approverId }: Props) {
+  const router = useRouter()
+  const supabase = createClient()
   const [activeTab, setActiveTab] = useState('pending')
+  const [platformName, setPlatformName] = useState(() => orgs[0]?.app_name || 'AbsenKu')
+  const [savingName, setSavingName] = useState(false)
 
   const totalOrgs = orgs.length + pending.length + rejected.length
+
+  const handleSavePlatformName = async () => {
+    const val = platformName.trim()
+    if (!val) return alert('Nama platform tidak boleh kosong')
+    setSavingName(true)
+    // Update all approved orgs
+    const { error } = await supabase
+      .from('organizations')
+      .update({ app_name: val })
+      .in('id', orgs.map(o => o.id))
+    if (error) {
+      alert('Gagal menyimpan: ' + error.message)
+    }
+    setSavingName(false)
+    router.refresh()
+  }
 
   return (
     <div className="p-6 h-full flex flex-col gap-5">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-800">Pengaturan Platform</h1>
-          <p className="text-sm text-gray-400 mt-0.5">Kelola verifikasi dan perusahaan yang terdaftar di AbsenKu</p>
+          <p className="text-sm text-gray-400 mt-0.5">Kelola verifikasi dan perusahaan yang terdaftar di {platformName}</p>
+        </div>
+      </div>
+
+      {/* Platform Name Card */}
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5">
+        <div className="flex items-center gap-4">
+          <div className="w-12 h-12 bg-gradient-to-br from-teal-500 to-teal-600 rounded-2xl flex items-center justify-center text-white text-xl font-bold shrink-0 shadow-lg shadow-teal-500/20">
+            {platformName[0]?.toUpperCase() || 'A'}
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold text-gray-700">Nama Platform</p>
+            <p className="text-xs text-gray-400 mt-0.5">Nama ini tampil di sidebar, login, register, dan halaman absensi</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              value={platformName}
+              onChange={e => setPlatformName(e.target.value)}
+              className="px-4 py-2.5 border border-gray-200 rounded-xl text-sm font-semibold w-52 focus:outline-none focus:ring-2 focus:ring-teal-400"
+              placeholder="Nama platform..."
+            />
+            <button
+              onClick={handleSavePlatformName}
+              disabled={savingName || platformName.trim() === (orgs[0]?.app_name || 'AbsenKu')}
+              className="px-5 py-2.5 bg-teal-600 hover:bg-teal-700 disabled:opacity-40 text-white rounded-xl text-sm font-semibold transition-colors"
+            >
+              {savingName ? 'Menyimpan...' : 'Simpan'}
+            </button>
+          </div>
         </div>
       </div>
 
