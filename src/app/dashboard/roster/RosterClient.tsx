@@ -666,7 +666,7 @@ export default function RosterClient({ employees, shifts, departments, schedules
         <>
           <div className="fixed inset-0 z-[100]" onClick={() => { setActiveCell(null); setPopupPos(null); setActiveCellData(null) }} />
           <div
-            className="fixed bg-white rounded-xl shadow-xl border border-gray-100 z-[101] p-1.5 min-w-36"
+            className="fixed bg-white rounded-xl shadow-xl border border-gray-100 z-[101] p-1.5 w-36"
             style={{ top: popupPos.top, left: popupPos.left, transform: 'translateX(-50%)' }}
             onClick={e => e.stopPropagation()}
           >
