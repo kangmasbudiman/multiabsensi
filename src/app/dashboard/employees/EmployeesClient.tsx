@@ -72,10 +72,13 @@ export default function EmployeesClient({ employees, departments, shifts, positi
   const supabase = createClient()
 
   const [search, setSearch] = useState('')
+  const resetPage = () => setPage(1)
   const actionRefs = useReactRef<Record<string, HTMLButtonElement | null>>({})
   const [faceModal, setFaceModal] = useState<{ url: string; name: string } | null>(null)
   const [filterDept, setFilterDept] = useState('')
   const [filterStatus, setFilterStatus] = useState('')
+  const [page, setPage] = useState(1)
+  const perPage = 25
   const [showModal, setShowModal] = useState(false)
   const [editEmployee, setEditEmployee] = useState<Employee | null>(null)
   const [isLoading, setIsLoading] = useState(false)
@@ -132,6 +135,11 @@ export default function EmployeesClient({ employees, departments, shifts, positi
     const matchStatus = !filterStatus || (filterStatus === 'active' ? e.is_active : !e.is_active)
     return matchSearch && matchDept && matchStatus
   })
+
+  // Pagination
+  const totalPages = Math.ceil(filtered.length / perPage)
+  const safePage = Math.min(page, totalPages || 1)
+  const paged = filtered.slice((safePage - 1) * perPage, safePage * perPage)
 
   const openAdd = () => {
     setEditEmployee(null)
@@ -468,14 +476,14 @@ export default function EmployeesClient({ employees, departments, shifts, positi
       {/* Filter & Search */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4 mb-4 flex flex-wrap gap-3">
         <input type="text" placeholder="Cari nama, username, ID, jabatan..."
-          value={search} onChange={e => setSearch(e.target.value)}
+          value={search} onChange={e => { setSearch(e.target.value); resetPage() }}
           className="flex-1 min-w-48 px-4 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-400" />
-        <select value={filterDept} onChange={e => setFilterDept(e.target.value)}
+        <select value={filterDept} onChange={e => { setFilterDept(e.target.value); resetPage() }}
           className="px-4 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 bg-white">
           <option value="">Semua Departemen</option>
           {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
         </select>
-        <select value={filterStatus} onChange={e => setFilterStatus(e.target.value)}
+        <select value={filterStatus} onChange={e => { setFilterStatus(e.target.value); resetPage() }}
           className="px-4 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 bg-white">
           <option value="">Semua Status</option>
           <option value="active">Aktif</option>
@@ -501,7 +509,7 @@ export default function EmployeesClient({ employees, departments, shifts, positi
                     {search || filterDept || filterStatus ? 'Karyawan tidak ditemukan' : 'Belum ada karyawan. Klik "+ Tambah Karyawan".'}
                   </td>
                 </tr>
-              ) : filtered.map(emp => (
+              ) : paged.map(emp => (
                 <tr key={emp.id} className="hover:bg-gray-50/50 transition-colors">
                   <td className="px-5 py-4">
                     <div className="flex items-center gap-3">
@@ -595,6 +603,50 @@ export default function EmployeesClient({ employees, departments, shifts, positi
             </tbody>
           </table>
         </div>
+
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between px-5 py-3 border-t border-gray-100">
+            <p className="text-xs text-gray-500">
+              Menampilkan {((safePage - 1) * perPage) + 1}–{Math.min(safePage * perPage, filtered.length)} dari {filtered.length} karyawan
+            </p>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setPage(p => Math.max(1, p - 1))}
+                disabled={safePage === 1}
+                className="px-3 py-1.5 rounded-lg text-xs font-medium border border-gray-200 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                ← Prev
+              </button>
+              {(() => {
+                const pages: number[] = []
+                const maxVisible = 5
+                let start = Math.max(1, safePage - Math.floor(maxVisible / 2))
+                const end = Math.min(totalPages, start + maxVisible - 1)
+                start = Math.max(1, end - maxVisible + 1)
+                for (let i = start; i <= end; i++) pages.push(i)
+                return pages.map(p => (
+                  <button
+                    key={p}
+                    onClick={() => setPage(p)}
+                    className={`w-8 h-8 rounded-lg text-xs font-semibold transition-colors ${
+                      p === safePage ? 'bg-teal-600 text-white' : 'text-gray-600 hover:bg-gray-100'
+                    }`}
+                  >
+                    {p}
+                  </button>
+                ))
+              })()}
+              <button
+                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                disabled={safePage === totalPages}
+                className="px-3 py-1.5 rounded-lg text-xs font-medium border border-gray-200 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                Next →
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Action Dropdown Portal */}
