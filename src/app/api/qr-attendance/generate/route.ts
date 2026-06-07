@@ -39,10 +39,14 @@ export async function POST(req: NextRequest) {
 
   // Parse request body
   const body = await req.json()
-  const { user_id, type = 'checkin', expiry_minutes = 30 } = body
+  const { user_id, org_id, type = 'checkin', expiry_minutes = 30 } = body
 
   if (!user_id) {
     return NextResponse.json({ error: 'user_id diperlukan' }, { status: 400 })
+  }
+
+  if (!org_id) {
+    return NextResponse.json({ error: 'org_id diperlukan' }, { status: 400 })
   }
 
   if (!['checkin', 'checkout'].includes(type)) {
@@ -56,7 +60,7 @@ export async function POST(req: NextRequest) {
     .eq('id', user_id)
     .single()
 
-  if (!employee || employee.org_id !== adminProfile.org_id || !employee.is_active) {
+  if (!employee || employee.org_id !== org_id || !employee.is_active) {
     return NextResponse.json({ error: 'Karyawan tidak valid' }, { status: 404 })
   }
 
@@ -91,7 +95,7 @@ export async function POST(req: NextRequest) {
   const { data: officeLoc } = await admin
     .from('office_locations')
     .select('id')
-    .eq('org_id', adminProfile.org_id)
+    .eq('org_id', org_id)
     .eq('is_active', true)
     .limit(1)
     .maybeSingle()
@@ -104,7 +108,7 @@ export async function POST(req: NextRequest) {
   const { data: qrToken, error: insertError } = await admin
     .from('qr_tokens')
     .insert({
-      org_id: adminProfile.org_id,
+      org_id: org_id,
       user_id,
       generated_by: adminProfile.id,
       shift_id: schedule?.shift_id ?? null,
