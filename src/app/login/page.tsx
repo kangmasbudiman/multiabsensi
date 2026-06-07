@@ -1,3 +1,4 @@
+import { Suspense } from 'react'
 import { createClient } from '@/lib/supabase/server'
 import LoginClient from './LoginClient'
 
@@ -12,5 +13,9 @@ export default async function LoginPage() {
 
   const appName = org?.app_name ?? 'AbsenKu'
 
-  return <LoginClient appName={appName} />
+  return (
+    <Suspense>
+      <LoginClient appName={appName} />
+    </Suspense>
+  )
 }
