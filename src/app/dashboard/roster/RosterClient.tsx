@@ -153,6 +153,7 @@ export default function RosterClient({ employees, shifts, departments, schedules
     const targetDays = days.filter(d => {
       if (bulkType === 'all') return true
       if (bulkType === 'weekdays') return !d.isWeekend
+      if (bulkType === 'weekdays_sat') return d.dayOfWeek !== 0
       if (bulkType === 'saturday') return d.dayOfWeek === 6
       if (bulkType === 'sunday') return d.dayOfWeek === 0
       if (bulkType === 'off') return true
@@ -374,6 +375,7 @@ export default function RosterClient({ employees, shifts, departments, schedules
                 <div className="flex flex-wrap gap-2">
                   {[
                     { val: 'weekdays', label: 'Hari Kerja (Sen–Jum)' },
+                    { val: 'weekdays_sat', label: 'Senin – Sabtu' },
                     { val: 'saturday', label: 'Sabtu' },
                     { val: 'sunday', label: 'Minggu' },
                     { val: 'all', label: 'Semua Hari' },
