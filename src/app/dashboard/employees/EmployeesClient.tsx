@@ -78,7 +78,7 @@ export default function EmployeesClient({ employees, departments, shifts, positi
   const [filterDept, setFilterDept] = useState('')
   const [filterStatus, setFilterStatus] = useState('')
   const [page, setPage] = useState(1)
-  const perPage = 25
+  const [perPage, setPerPage] = useState(25)
   const [showModal, setShowModal] = useState(false)
   const [editEmployee, setEditEmployee] = useState<Employee | null>(null)
   const [isLoading, setIsLoading] = useState(false)
@@ -604,49 +604,113 @@ export default function EmployeesClient({ employees, departments, shifts, positi
           </table>
         </div>
 
-        {/* Pagination */}
-        {totalPages > 1 && (
-          <div className="flex items-center justify-between px-5 py-3 border-t border-gray-100">
-            <p className="text-xs text-gray-500">
-              Menampilkan {((safePage - 1) * perPage) + 1}–{Math.min(safePage * perPage, filtered.length)} dari {filtered.length} karyawan
-            </p>
+        {/* Pagination — DataTable style */}
+        <div className="flex flex-wrap items-center justify-between gap-3 px-5 py-3 border-t border-gray-100 bg-gray-50/50">
+          {/* Left: rows per page selector */}
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-gray-500">Tampilkan</span>
+            <select
+              value={perPage}
+              onChange={e => { setPerPage(Number(e.target.value)); setPage(1) }}
+              className="px-2 py-1 border border-gray-200 rounded-md text-xs bg-white focus:outline-none focus:ring-1 focus:ring-teal-400"
+            >
+              {[10, 25, 50, 100].map(n => (
+                <option key={n} value={n}>{n}</option>
+              ))}
+            </select>
+            <span className="text-xs text-gray-500">data per halaman</span>
+          </div>
+
+          {/* Center: info */}
+          <p className="text-xs text-gray-500">
+            {filtered.length > 0
+              ? `${((safePage - 1) * perPage) + 1}–${Math.min(safePage * perPage, filtered.length)} dari ${filtered.length} data`
+              : '0 data'
+            }
+          </p>
+
+          {/* Right: navigation */}
+          {totalPages > 1 && (
             <div className="flex items-center gap-1">
+              {/* First */}
+              <button
+                onClick={() => setPage(1)}
+                disabled={safePage === 1}
+                className="w-8 h-8 flex items-center justify-center rounded-lg border border-gray-200 hover:bg-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                title="Halaman pertama"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M11 19l-7-7 7-7m8 14l-7-7 7-7" />
+                </svg>
+              </button>
+              {/* Prev */}
               <button
                 onClick={() => setPage(p => Math.max(1, p - 1))}
                 disabled={safePage === 1}
-                className="px-3 py-1.5 rounded-lg text-xs font-medium border border-gray-200 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                className="w-8 h-8 flex items-center justify-center rounded-lg border border-gray-200 hover:bg-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                title="Halaman sebelumnya"
               >
-                ← Prev
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+                </svg>
               </button>
+              {/* Page numbers */}
               {(() => {
-                const pages: number[] = []
-                const maxVisible = 5
-                let start = Math.max(1, safePage - Math.floor(maxVisible / 2))
-                const end = Math.min(totalPages, start + maxVisible - 1)
-                start = Math.max(1, end - maxVisible + 1)
-                for (let i = start; i <= end; i++) pages.push(i)
-                return pages.map(p => (
-                  <button
-                    key={p}
-                    onClick={() => setPage(p)}
-                    className={`w-8 h-8 rounded-lg text-xs font-semibold transition-colors ${
-                      p === safePage ? 'bg-teal-600 text-white' : 'text-gray-600 hover:bg-gray-100'
-                    }`}
-                  >
-                    {p}
-                  </button>
-                ))
+                const pages: (number | string)[] = []
+                if (totalPages <= 7) {
+                  for (let i = 1; i <= totalPages; i++) pages.push(i)
+                } else {
+                  pages.push(1)
+                  if (safePage > 3) pages.push('...')
+                  const start = Math.max(2, safePage - 1)
+                  const end = Math.min(totalPages - 1, safePage + 1)
+                  for (let i = start; i <= end; i++) pages.push(i)
+                  if (safePage < totalPages - 2) pages.push('...')
+                  pages.push(totalPages)
+                }
+                return pages.map((p, i) =>
+                  typeof p === 'string' ? (
+                    <span key={`dots-${i}`} className="w-8 h-8 flex items-center justify-center text-xs text-gray-400">…</span>
+                  ) : (
+                    <button
+                      key={p}
+                      onClick={() => setPage(p)}
+                      className={`w-8 h-8 rounded-lg text-xs font-semibold transition-colors ${
+                        p === safePage
+                          ? 'bg-teal-600 text-white shadow-sm'
+                          : 'text-gray-600 border border-gray-200 hover:bg-white'
+                      }`}
+                    >
+                      {p}
+                    </button>
+                  )
+                )
               })()}
+              {/* Next */}
               <button
                 onClick={() => setPage(p => Math.min(totalPages, p + 1))}
                 disabled={safePage === totalPages}
-                className="px-3 py-1.5 rounded-lg text-xs font-medium border border-gray-200 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                className="w-8 h-8 flex items-center justify-center rounded-lg border border-gray-200 hover:bg-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                title="Halaman berikutnya"
               >
-                Next →
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+              {/* Last */}
+              <button
+                onClick={() => setPage(totalPages)}
+                disabled={safePage === totalPages}
+                className="w-8 h-8 flex items-center justify-center rounded-lg border border-gray-200 hover:bg-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                title="Halaman terakhir"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M13 5l7 7-7 7M5 5l7 7-7 7" />
+                </svg>
               </button>
             </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
 
       {/* Action Dropdown Portal */}
