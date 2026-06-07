@@ -59,7 +59,7 @@ export default function RosterClient({ employees, shifts, departments, schedules
   // Bulk form state
   const [bulkEmpIds, setBulkEmpIds] = useState<string[]>([])
   const [bulkShiftId, setBulkShiftId] = useState('')
-  const [bulkType, setBulkType] = useState<'all' | 'weekdays' | 'saturday' | 'sunday' | 'range' | 'off'>('weekdays')
+  const [bulkType, setBulkType] = useState<'all' | 'weekdays' | 'weekdays_sat' | 'saturday' | 'sunday' | 'range' | 'off'>('weekdays')
   const [bulkFrom, setBulkFrom] = useState('')
   const [bulkTo, setBulkTo] = useState('')
 
