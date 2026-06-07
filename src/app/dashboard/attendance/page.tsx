@@ -46,10 +46,38 @@ export default async function AttendancePage({
 
   const attendanceMap = new Map((attendances ?? []).map(a => [a.user_id, a]))
 
+  // Night shift check: for employees without attendance today,
+  // check if they have an active night shift from yesterday (not yet checked out)
+  const employeesWithoutAttendance = (employees ?? []).filter(e => !attendanceMap.has(e.id))
+  let nightShiftFromYesterday = new Map<string, { check_in_time: string; shift_name: string }>()
+
+  if (employeesWithoutAttendance.length > 0) {
+    const yesterday = new Date(new Date(selectedDate + 'T00:00:00').getTime() - 86400000)
+      .toLocaleDateString('sv-SE', { timeZone: 'Asia/Jakarta' })
+    const empIds = employeesWithoutAttendance.map(e => e.id)
+
+    const { data: yesterdayAtts } = await admin
+      .from('attendances')
+      .select('user_id, check_in_time, shift_id, shifts!inner(name, crosses_midnight)')
+      .eq('date', yesterday)
+      .in('user_id', empIds.length > 0 ? empIds : ['__none__'])
+      .is('check_out_time', null)
+      .eq('shifts.crosses_midnight', true)
+
+    for (const ya of (yesterdayAtts ?? [])) {
+      const shift = (ya.shifts as any)?.[0] ?? ya.shifts as any
+      nightShiftFromYesterday.set(ya.user_id, {
+        check_in_time: ya.check_in_time,
+        shift_name: shift?.name ?? 'Shift Malam',
+      })
+    }
+  }
+
   // Gabungkan data
   const rows = (employees ?? []).map(emp => ({
     ...emp,
     attendance: attendanceMap.get(emp.id) ?? null,
+    night_shift: nightShiftFromYesterday.get(emp.id) ?? null,
   }))
 
   // Filter
@@ -74,13 +102,16 @@ export default async function AttendancePage({
   const totalPages = Math.ceil(filtered.length / pageSize)
   const paginated = filtered.slice((page - 1) * pageSize, page * pageSize)
 
-  // Summary counts
+  // Summary counts (night shift from yesterday = not absent, they're still working)
+  const absentCount = rows.filter(r => !r.attendance && !nightShiftFromYesterday.has(r.id)).length
+  const nightShiftCount = nightShiftFromYesterday.size
+
   const summary = {
     total: rows.length,
-    hadir: rows.filter(r => r.attendance && !r.attendance.is_lembur).length,
+    hadir: rows.filter(r => r.attendance && !r.attendance.is_lembur).length + nightShiftCount,
     lembur: rows.filter(r => r.attendance?.is_lembur).length,
     checkedOut: rows.filter(r => r.attendance?.check_out_time).length,
-    absent: rows.filter(r => !r.attendance).length,
+    absent: absentCount,
   }
 
   const dateLabel = format(new Date(selectedDate + 'T00:00:00'), 'EEEE, dd MMMM yyyy', { locale: id })

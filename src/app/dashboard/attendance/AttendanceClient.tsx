@@ -25,6 +25,7 @@ type Row = {
     face_confidence: number | null
     method: string | null
   } | null
+  night_shift: { check_in_time: string; shift_name: string } | null
 }
 
 type Summary = { total: number; hadir: number; lembur: number; checkedOut: number; absent: number }
@@ -62,7 +63,13 @@ export default function AttendanceClient({
     return `${h}j ${m}m`
   }
 
+  const checkinTime = (row: Row) => {
+    const t = row.attendance?.check_in_time ?? row.night_shift?.check_in_time
+    return t ? new Date(t).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' }) : null
+  }
+
   const statusBadge = (row: Row) => {
+    if (!row.attendance && row.night_shift) return <span className="text-xs bg-purple-100 text-purple-700 font-semibold px-2 py-0.5 rounded-full">🌙 Shift Malam</span>
     if (!row.attendance) return <span className="text-xs bg-red-100 text-red-600 font-semibold px-2 py-0.5 rounded-full">Tidak Hadir</span>
     if (row.attendance.is_lembur) return <span className="text-xs bg-orange-100 text-orange-600 font-semibold px-2 py-0.5 rounded-full">Lembur</span>
     if (row.attendance.status === 'terlambat') return <span className="text-xs bg-yellow-100 text-yellow-600 font-semibold px-2 py-0.5 rounded-full">Terlambat</span>
@@ -202,7 +209,7 @@ export default function AttendanceClient({
                   </td>
                 </tr>
               ) : rows.map(row => (
-                <tr key={row.id} className={`hover:bg-gray-50/50 transition-colors ${!row.attendance ? 'opacity-60' : ''}`}>
+                <tr key={row.id} className={`hover:bg-gray-50/50 transition-colors ${!row.attendance && !row.night_shift ? 'opacity-60' : ''}`}>
                   <td className="px-5 py-3.5">
                     <div className="flex items-center gap-3">
                       <div className="w-9 h-9 bg-teal-100 rounded-full flex items-center justify-center text-teal-600 font-bold text-sm shrink-0 overflow-hidden">
@@ -218,14 +225,14 @@ export default function AttendanceClient({
                   </td>
                   <td className="px-4 py-3.5">{statusBadge(row)}</td>
                   <td className="px-4 py-3.5">
-                    {fmtTime(row.attendance?.check_in_time ?? null)
-                      ? <span className="text-sm font-semibold text-green-600">{fmtTime(row.attendance?.check_in_time ?? null)}</span>
+                    {checkinTime(row)
+                      ? <span className="text-sm font-semibold text-green-600">{checkinTime(row)}</span>
                       : <span className="text-sm text-gray-300">—</span>}
                   </td>
                   <td className="px-4 py-3.5">
                     {fmtTime(row.attendance?.check_out_time ?? null)
                       ? <span className="text-sm font-semibold text-blue-600">{fmtTime(row.attendance?.check_out_time ?? null)}</span>
-                      : row.attendance
+                      : row.attendance || row.night_shift
                         ? <span className="text-xs text-yellow-500 font-medium">Belum checkout</span>
                         : <span className="text-sm text-gray-300">—</span>}
                   </td>

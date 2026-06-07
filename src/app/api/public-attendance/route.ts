@@ -12,21 +12,48 @@ export async function GET(req: NextRequest) {
   }
 
   const admin = createAdminClient()
-  const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Jakarta' })
+  const now = new Date()
+  const today = now.toLocaleDateString('sv-SE', { timeZone: 'Asia/Jakarta' })
 
   const { data: att } = await admin
     .from('attendances')
-    .select('id, check_in_time, check_out_time, status')
+    .select('id, check_in_time, check_out_time, status, shift_id')
     .eq('user_id', userId)
     .eq('date', today)
     .maybeSingle()
 
+  // Night shift: also check yesterday's record
+  let yesterdayAtt = null
+  if (!att) {
+    const yesterday = new Date(now.getTime() - 86400000).toLocaleDateString('sv-SE', { timeZone: 'Asia/Jakarta' })
+    const { data: yd } = await admin
+      .from('attendances')
+      .select('id, check_in_time, check_out_time, status, shift_id')
+      .eq('user_id', userId)
+      .eq('date', yesterday)
+      .is('check_out_time', null)
+      .maybeSingle()
+
+    if (yd && yd.shift_id) {
+      const { data: shift } = await admin
+        .from('shifts')
+        .select('crosses_midnight')
+        .eq('id', yd.shift_id)
+        .single()
+      if (shift?.crosses_midnight) {
+        yesterdayAtt = yd
+      }
+    }
+  }
+
+  const activeAtt = att || yesterdayAtt
+
   return NextResponse.json({
-    has_checked_in: !!att?.check_in_time,
-    has_checked_out: !!att?.check_out_time,
-    check_in_time: att?.check_in_time ?? null,
-    check_out_time: att?.check_out_time ?? null,
-    attendance_id: att?.id ?? null,
+    has_checked_in: !!activeAtt?.check_in_time,
+    has_checked_out: !!activeAtt?.check_out_time,
+    check_in_time: activeAtt?.check_in_time ?? null,
+    check_out_time: activeAtt?.check_out_time ?? null,
+    attendance_id: activeAtt?.id ?? null,
   })
 }
 

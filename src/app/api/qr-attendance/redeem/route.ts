@@ -62,24 +62,50 @@ export async function POST(req: NextRequest) {
   const today = now.toLocaleDateString('sv-SE', { timeZone: 'Asia/Jakarta' })
   const timeStr = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' })
 
-  // Check existing attendance
+  // Check existing attendance for today
   const { data: existingAtt } = await admin
     .from('attendances')
-    .select('id, check_in_time, check_out_time')
+    .select('id, check_in_time, check_out_time, shift_id')
     .eq('user_id', qrToken.user_id)
     .eq('date', today)
     .maybeSingle()
+
+  // Night shift: also check yesterday's record if no record today
+  let yesterdayAtt = null
+  if (!existingAtt) {
+    const yesterday = new Date(now.getTime() - 86400000).toLocaleDateString('sv-SE', { timeZone: 'Asia/Jakarta' })
+    const { data: yd } = await admin
+      .from('attendances')
+      .select('id, check_in_time, check_out_time, shift_id')
+      .eq('user_id', qrToken.user_id)
+      .eq('date', yesterday)
+      .is('check_out_time', null)
+      .maybeSingle()
+
+    if (yd && yd.shift_id) {
+      const { data: shift } = await admin
+        .from('shifts')
+        .select('crosses_midnight')
+        .eq('id', yd.shift_id)
+        .single()
+      if (shift?.crosses_midnight) {
+        yesterdayAtt = yd
+      }
+    }
+  }
+
+  const activeAtt = existingAtt || yesterdayAtt
 
   let attendanceType: 'checkin' | 'checkout'
   let attendanceId: string
 
   if (qrToken.type === 'checkout') {
     // QR specifically for checkout
-    if (!existingAtt?.check_in_time) {
-      return NextResponse.json({ error: 'Karyawan belum check-in hari ini' }, { status: 400 })
+    if (!activeAtt?.check_in_time) {
+      return NextResponse.json({ error: 'Karyawan belum check-in' }, { status: 400 })
     }
-    if (existingAtt.check_out_time) {
-      return NextResponse.json({ error: 'Karyawan sudah check-out hari ini' }, { status: 400 })
+    if (activeAtt.check_out_time) {
+      return NextResponse.json({ error: 'Karyawan sudah check-out' }, { status: 400 })
     }
 
     // Update existing record with checkout
@@ -92,7 +118,7 @@ export async function POST(req: NextRequest) {
         verified_by: qrToken.generated_by,
         notes: 'QR Admin Check-out',
       })
-      .eq('id', existingAtt.id)
+      .eq('id', activeAtt.id)
 
     if (updateError) {
       console.error('QR checkout update error:', updateError)
@@ -100,13 +126,13 @@ export async function POST(req: NextRequest) {
     }
 
     attendanceType = 'checkout'
-    attendanceId = existingAtt.id
+    attendanceId = activeAtt.id
   } else {
     // QR for checkin
-    if (existingAtt?.check_in_time) {
+    if (activeAtt?.check_in_time) {
       // Already checked in — use as checkout instead
-      if (existingAtt.check_out_time) {
-        return NextResponse.json({ error: 'Sudah check-in dan check-out hari ini' }, { status: 400 })
+      if (activeAtt.check_out_time) {
+        return NextResponse.json({ error: 'Sudah check-in dan check-out' }, { status: 400 })
       }
 
       const { error: updateError } = await admin
@@ -118,7 +144,7 @@ export async function POST(req: NextRequest) {
           verified_by: qrToken.generated_by,
           notes: 'QR Admin Check-out',
         })
-        .eq('id', existingAtt.id)
+        .eq('id', activeAtt.id)
 
       if (updateError) {
         console.error('QR checkout update error:', updateError)
@@ -126,7 +152,7 @@ export async function POST(req: NextRequest) {
       }
 
       attendanceType = 'checkout'
-      attendanceId = existingAtt.id
+      attendanceId = activeAtt.id
     } else {
       // No record yet — insert check-in
       const { data: newAtt, error: insertError } = await admin
