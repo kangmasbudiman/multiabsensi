@@ -21,6 +21,7 @@ type Row = {
     notes: string | null
     check_in_photo_url: string | null
     check_out_photo_url: string | null
+    photo_purged_at: string | null
     face_verification_status: string | null
     face_confidence: number | null
     method: string | null
@@ -283,7 +284,16 @@ export default function AttendanceClient({
                         </button>
                       )}
                       {!row.attendance?.check_in_photo_url && !row.attendance?.check_out_photo_url && (
-                        <span className="text-gray-300 text-sm">—</span>
+                        row.attendance?.photo_purged_at ? (
+                          <span
+                            className="text-[10px] text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded"
+                            title={`Foto diarsipkan ${new Date(row.attendance.photo_purged_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}`}
+                          >
+                            Arsip
+                          </span>
+                        ) : (
+                          <span className="text-gray-300 text-sm">—</span>
+                        )
                       )}
                     </div>
                   </td>

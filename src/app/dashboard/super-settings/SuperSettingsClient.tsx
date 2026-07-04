@@ -29,6 +29,7 @@ interface Props {
   rejected: Org[]
   totalUsers: number
   approverId: string
+  initialPlatformName: string
 }
 
 const tabs = [
@@ -38,11 +39,10 @@ const tabs = [
   { id: 'branding', label: 'Branding', icon: '🎨' },
 ]
 
-export default function SuperSettingsClient({ orgs, pending, rejected, totalUsers, approverId }: Props) {
+export default function SuperSettingsClient({ orgs, pending, rejected, totalUsers, approverId, initialPlatformName }: Props) {
   const router = useRouter()
-  const supabase = createClient()
   const [activeTab, setActiveTab] = useState('pending')
-  const [platformName, setPlatformName] = useState(() => orgs[0]?.app_name || 'AbsenKu')
+  const [platformName, setPlatformName] = useState(initialPlatformName)
   const [savingName, setSavingName] = useState(false)
 
   const totalOrgs = orgs.length + pending.length + rejected.length
@@ -52,13 +52,14 @@ export default function SuperSettingsClient({ orgs, pending, rejected, totalUser
     if (!val) return alert('Nama platform tidak boleh kosong')
     setSavingName(true)
     try {
-      // Update ALL organizations (not just approved)
-      const { error } = await supabase
-        .from('organizations')
-        .update({ app_name: val })
-        .neq('id', '00000000-0000-0000-0000-000000000000') // update all rows
-      if (error) {
-        alert('Gagal menyimpan: ' + error.message)
+      const res = await fetch('/api/platform-name', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: val }),
+      })
+      const json = await res.json().catch(() => null)
+      if (!res.ok) {
+        alert('Gagal menyimpan: ' + (json?.error ?? res.statusText))
         return
       }
       window.location.reload()

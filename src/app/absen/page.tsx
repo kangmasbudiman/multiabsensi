@@ -1,20 +1,13 @@
-import { createClient } from '@/lib/supabase/server'
+import { getPlatformName } from '@/lib/platform'
 import AbsenClient from './AbsenClient'
 
-export const metadata = {
-  title: 'Absensi Web - AbsenKu',
+export async function generateMetadata() {
+  const appName = await getPlatformName()
+  return { title: `Absensi Web - ${appName}` }
 }
 
 export default async function AbsenPage() {
-  const supabase = await createClient()
-  const { data: org } = await supabase
-    .from('organizations')
-    .select('app_name')
-    .eq('is_active', true)
-    .limit(1)
-    .single()
-
-  const appName = org?.app_name ?? 'AbsenKu'
+  const appName = await getPlatformName()
 
   return <AbsenClient appName={appName} />
 }
