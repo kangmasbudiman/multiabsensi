@@ -118,6 +118,7 @@ export default function AbsenClient({ appName = 'AbsenKu' }: { appName?: string 
 
   // Geofencing
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null)
+  const [gpsAccuracy, setGpsAccuracy] = useState<number | null>(null)
   const [officeLocations, setOfficeLocations] = useState<OfficeLocation[]>([])
   const [locationStatus, setLocationStatus] = useState<'unknown' | 'checking' | 'inside' | 'outside' | 'denied'>('unknown')
   const [nearestOffice, setNearestOffice] = useState<{ name: string; distance: number } | null>(null)
@@ -237,6 +238,47 @@ export default function AbsenClient({ appName = 'AbsenKu' }: { appName?: string 
     return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
   }
 
+  // Location check — fresh GPS reading, compute distance, set status.
+  // Strict: if GPS reading is too imprecise to fit inside radius, treat as outside.
+  const checkLocation = async (locations: OfficeLocation[]) => {
+    setLocationStatus('checking')
+    try {
+      const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          enableHighAccuracy: true,
+          timeout: 15000,
+          maximumAge: 0,
+        })
+      })
+      const { latitude: lat, longitude: lng, accuracy } = pos.coords
+      setUserLocation({ lat, lng })
+      setGpsAccuracy(accuracy ? Math.round(accuracy) : null)
+
+      let insideAny = false
+      let nearest: { name: string; distance: number } | null = null
+
+      for (const loc of locations) {
+        const dist = getDistance(lat, lng, loc.latitude, loc.longitude)
+        // Strict check: only count as inside if (distance - accuracy) <= radius.
+        // If GPS error circle is bigger than remaining slack, can't trust the "inside" reading.
+        const slack = Math.max(0, dist - accuracy)
+        if (slack <= loc.radius_meters) insideAny = true
+        if (!nearest || dist < nearest.distance) {
+          nearest = { name: loc.name, distance: Math.round(dist) }
+        }
+      }
+
+      setNearestOffice(nearest)
+      setLocationStatus(insideAny ? 'inside' : 'outside')
+    } catch {
+      setLocationStatus('denied')
+    }
+  }
+
+  const refreshLocation = async () => {
+    if (officeLocations.length > 0) await checkLocation(officeLocations)
+  }
+
   const searchOrg = async (codeOverride?: string) => {
     const code = (codeOverride ?? orgCode).trim()
     if (!code) return
@@ -259,34 +301,7 @@ export default function AbsenClient({ appName = 'AbsenKu' }: { appName?: string 
 
       // Check GPS
       if (locations.length > 0) {
-        setLocationStatus('checking')
-        try {
-          const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
-            navigator.geolocation.getCurrentPosition(resolve, reject, {
-              enableHighAccuracy: true,
-              timeout: 10000,
-              maximumAge: 30000,
-            })
-          })
-          const { latitude: lat, longitude: lng } = pos.coords
-          setUserLocation({ lat, lng })
-
-          let insideAny = false
-          let nearest: { name: string; distance: number } | null = null
-
-          for (const loc of locations) {
-            const dist = getDistance(lat, lng, loc.latitude, loc.longitude)
-            if (dist <= loc.radius_meters) insideAny = true
-            if (!nearest || dist < nearest.distance) {
-              nearest = { name: loc.name, distance: Math.round(dist) }
-            }
-          }
-
-          setNearestOffice(nearest)
-          setLocationStatus(insideAny ? 'inside' : 'outside')
-        } catch {
-          setLocationStatus('denied')
-        }
+        await checkLocation(locations)
       } else {
         setLocationStatus('inside')
       }
@@ -677,6 +692,19 @@ export default function AbsenClient({ appName = 'AbsenKu' }: { appName?: string 
                       </div>
                     )}
 
+                    {/* GPS imprecision warning — high error margin reduces confidence */}
+                    {locationStatus === 'inside' && gpsAccuracy !== null && nearestOffice && (
+                      gpsAccuracy > nearestOffice.distance * 0.5 && (
+                        <div className="bg-amber-50 border border-amber-200 text-amber-800 px-4 py-2 rounded-xl text-xs flex items-center gap-2">
+                          <span className="shrink-0">⚠️</span>
+                          <span>
+                            Akurasi GPS ±{gpsAccuracy}m. Jarak ke kantor terdekat {nearestOffice.distance}m.
+                            {gpsAccuracy > nearestOffice.distance && ' Pembacaan GPS terlalu meleset — disarankan refresh atau pindah ke lokasi terbuka.'}
+                          </span>
+                        </div>
+                      )
+                    )}
+
                     {modelsLoading && (
                       <div className="text-center text-sm text-gray-500 flex items-center justify-center gap-2">
                         <div className="w-4 h-4 rounded-full border-2 border-teal-400 border-t-transparent animate-spin" />
@@ -720,9 +748,70 @@ export default function AbsenClient({ appName = 'AbsenKu' }: { appName?: string 
                         Lokasi Anda tidak terdeteksi di area kantor.
                       </p>
                     )}
-                    <p className="text-xs text-gray-400 mt-3">
+                    <p className="text-xs text-gray-400 mt-3 mb-4">
                       Kamera absensi hanya aktif saat Anda berada di area kantor.
                     </p>
+                    <button
+                      onClick={refreshLocation}
+                      disabled={locationStatus === 'checking'}
+                      className="px-4 py-2 bg-teal-600 hover:bg-teal-700 disabled:opacity-60 text-white rounded-xl text-sm font-semibold inline-flex items-center gap-2"
+                    >
+                      {locationStatus === 'checking' ? (
+                        <>
+                          <div className="w-3.5 h-3.5 border-2 border-white/50 border-t-white rounded-full animate-spin" />
+                          Memeriksa...
+                        </>
+                      ) : (
+                        <>🔄 Cek Ulang Lokasi</>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* GPS debug info — always visible when geofence is configured */}
+              {officeLocations.length > 0 && (
+                <div className="bg-white rounded-2xl shadow-2xl overflow-hidden">
+                  <div className="px-5 py-4 border-b border-gray-100">
+                    <h3 className="text-xs font-bold text-gray-700 uppercase tracking-wide flex items-center gap-2">
+                      <MapPin className="w-3.5 h-3.5" />
+                      Info Lokasi
+                      <span className={`ml-auto text-[10px] px-2 py-0.5 rounded-full font-semibold ${
+                        locationStatus === 'inside' ? 'bg-green-100 text-green-700' :
+                        locationStatus === 'outside' ? 'bg-red-100 text-red-700' :
+                        locationStatus === 'denied' ? 'bg-amber-100 text-amber-700' :
+                        'bg-gray-100 text-gray-600'
+                      }`}>
+                        {locationStatus.toUpperCase()}
+                      </span>
+                    </h3>
+                  </div>
+                  <div className="px-5 py-3 text-xs space-y-1.5 font-mono">
+                    {userLocation ? (
+                      <div className="flex justify-between gap-2">
+                        <span className="text-gray-500">Koordinat Anda:</span>
+                        <span className="text-gray-800 text-right">
+                          {userLocation.lat.toFixed(6)}, {userLocation.lng.toFixed(6)}
+                          {gpsAccuracy !== null && (
+                            <span className="text-gray-400"> (±{gpsAccuracy}m)</span>
+                          )}
+                        </span>
+                      </div>
+                    ) : (
+                      <p className="text-gray-400 italic">Belum ada pembacaan GPS</p>
+                    )}
+                    {officeLocations.map((loc, i) => {
+                      const dist = userLocation ? Math.round(getDistance(userLocation.lat, userLocation.lng, loc.latitude, loc.longitude)) : null
+                      return (
+                        <div key={i} className="flex justify-between gap-2">
+                          <span className="text-gray-500">{loc.name}:</span>
+                          <span className={`text-right ${dist !== null && dist <= loc.radius_meters ? 'text-green-700 font-semibold' : 'text-gray-800'}`}>
+                            {dist !== null ? `${dist}m` : '—'}{' '}
+                            <span className="text-gray-400">(radius {loc.radius_meters}m)</span>
+                          </span>
+                        </div>
+                      )
+                    })}
                   </div>
                 </div>
               )}
