@@ -120,10 +120,12 @@ export default function AbsenClient({ appName = 'AbsenKu' }: { appName?: string 
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null)
   const [gpsAccuracy, setGpsAccuracy] = useState<number | null>(null)
   const [officeLocations, setOfficeLocations] = useState<OfficeLocation[]>([])
-  const [locationStatus, setLocationStatus] = useState<'unknown' | 'checking' | 'inside' | 'outside' | 'denied'>('unknown')
+  const [locationStatus, setLocationStatus] = useState<'unknown' | 'checking' | 'inside' | 'outside' | 'denied' | 'no_geofence'>('unknown')
   const [nearestOffice, setNearestOffice] = useState<{ name: string; distance: number } | null>(null)
 
-  const canScan = locationStatus === 'inside' || locationStatus === 'unknown'
+  // Strict: only allow scan when GPS proves we're inside, OR admin hasn't configured any geofence.
+  // Initial state 'unknown' must BLOCK — never allow scanning before location is verified.
+  const canScan = locationStatus === 'inside' || locationStatus === 'no_geofence'
 
   // Camera
   const videoRef = useRef<HTMLVideoElement>(null)
@@ -303,7 +305,9 @@ export default function AbsenClient({ appName = 'AbsenKu' }: { appName?: string 
       if (locations.length > 0) {
         await checkLocation(locations)
       } else {
-        setLocationStatus('inside')
+        // Admin hasn't configured any office location — geofence cannot be enforced.
+        // Mark as 'no_geofence' so UI can warn the user (and admin) clearly.
+        setLocationStatus('no_geofence')
       }
 
       setStep('scan')
@@ -617,6 +621,20 @@ export default function AbsenClient({ appName = 'AbsenKu' }: { appName?: string 
           {/* Step: Scan */}
           {step === 'scan' && (
             <>
+              {/* No-geofence warning — admin hasn't configured any office location */}
+              {locationStatus === 'no_geofence' && (
+                <div className="bg-amber-50 border-2 border-amber-300 rounded-2xl p-4 flex items-start gap-3">
+                  <span className="text-xl shrink-0">⚠️</span>
+                  <div className="flex-1">
+                    <p className="font-bold text-amber-900 text-sm">Geofence Belum Dikonfigurasi</p>
+                    <p className="text-xs text-amber-800 mt-1 leading-relaxed">
+                      Perusahaan ini belum mengatur lokasi kantor. Siapa pun dari lokasi mana pun bisa absen.
+                      Minta admin membuka <strong>/dashboard/locations</strong> untuk menambahkan minimal satu lokasi kantor.
+                    </p>
+                  </div>
+                </div>
+              )}
+
               {/* Camera card — only shown when inside geofence */}
               {canScan && (
                 <div className="bg-white rounded-2xl shadow-2xl overflow-hidden">
@@ -780,9 +798,10 @@ export default function AbsenClient({ appName = 'AbsenKu' }: { appName?: string 
                         locationStatus === 'inside' ? 'bg-green-100 text-green-700' :
                         locationStatus === 'outside' ? 'bg-red-100 text-red-700' :
                         locationStatus === 'denied' ? 'bg-amber-100 text-amber-700' :
+                        locationStatus === 'checking' ? 'bg-blue-100 text-blue-700' :
                         'bg-gray-100 text-gray-600'
                       }`}>
-                        {locationStatus.toUpperCase()}
+                        {locationStatus.toUpperCase().replace('_', ' ')}
                       </span>
                     </h3>
                   </div>
@@ -812,6 +831,24 @@ export default function AbsenClient({ appName = 'AbsenKu' }: { appName?: string 
                         </div>
                       )
                     })}
+                  </div>
+                </div>
+              )}
+
+              {/* Geofence not configured — show explicit card */}
+              {officeLocations.length === 0 && (
+                <div className="bg-white rounded-2xl shadow-2xl overflow-hidden">
+                  <div className="px-5 py-4 border-b border-gray-100">
+                    <h3 className="text-xs font-bold text-gray-700 uppercase tracking-wide flex items-center gap-2">
+                      <MapPin className="w-3.5 h-3.5" />
+                      Info Lokasi
+                      <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full font-semibold bg-amber-100 text-amber-700">
+                        NO GEOFENCE
+                      </span>
+                    </h3>
+                  </div>
+                  <div className="px-5 py-3 text-xs text-gray-600">
+                    Belum ada lokasi kantor terdaftar untuk perusahaan ini. Geofence tidak aktif — siapa pun dari mana pun bisa absen sampai admin menambahkan lokasi di <strong>/dashboard/locations</strong>.
                   </div>
                 </div>
               )}
