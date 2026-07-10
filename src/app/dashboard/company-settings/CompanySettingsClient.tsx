@@ -1,8 +1,9 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import QRCode from 'qrcode'
 
 interface Org {
   id: string
@@ -32,6 +33,7 @@ interface Props {
 
 const tabs = [
   { id: 'info', label: 'Informasi Perusahaan', icon: '🏢' },
+  { id: 'qr', label: 'QR Absen', icon: '📱' },
   { id: 'announcements', label: 'Pengumuman', icon: '📢' },
 ]
 
@@ -88,6 +90,7 @@ export default function CompanySettingsClient({ org, announcements: initAnnounce
 
         <div className="p-6">
           {activeTab === 'info' && <CompanyInfoTab org={org} orgId={orgId} />}
+          {activeTab === 'qr' && <QrAbsenTab companyCode={org?.company_code ?? ''} orgName={org?.name ?? ''} />}
           {activeTab === 'announcements' && (
             <AnnouncementsTab
               announcements={announcements}
@@ -257,6 +260,160 @@ function CompanyInfoTab({ org, orgId }: { org: Org | null; orgId: string }) {
         >
           {loading ? 'Menyimpan...' : 'Simpan Perubahan'}
         </button>
+      </div>
+    </div>
+  )
+}
+
+function QrAbsenTab({ companyCode, orgName }: { companyCode: string; orgName: string }) {
+  const [origin, setOrigin] = useState('')
+  const [qrDataUrl, setQrDataUrl] = useState('')
+  const [copied, setCopied] = useState(false)
+  const [downloading, setDownloading] = useState(false)
+
+  const absenUrl = origin ? `${origin}/absen?code=${encodeURIComponent(companyCode)}` : ''
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') setOrigin(window.location.origin)
+  }, [])
+
+  useEffect(() => {
+    if (!absenUrl) return
+    QRCode.toDataURL(absenUrl, { width: 512, margin: 2, errorCorrectionLevel: 'H', color: { dark: '#0f766e', light: '#ffffff' } })
+      .then(setQrDataUrl)
+      .catch(() => {})
+  }, [absenUrl])
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(absenUrl)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    } catch {}
+  }
+
+  const handleDownload = async () => {
+    if (!qrDataUrl) return
+    setDownloading(true)
+    try {
+      // Composite QR + label onto a printable canvas
+      const img = new Image()
+      img.src = qrDataUrl
+      await new Promise(r => { img.onload = r })
+      const padding = 60
+      const headerH = 110
+      const footerH = 80
+      const W = img.width + padding * 2
+      const H = img.height + padding * 2 + headerH + footerH
+      const canvas = document.createElement('canvas')
+      canvas.width = W
+      canvas.height = H
+      const ctx = canvas.getContext('2d')!
+      ctx.fillStyle = '#ffffff'
+      ctx.fillRect(0, 0, W, H)
+      // Header
+      ctx.fillStyle = '#0f766e'
+      ctx.font = 'bold 36px system-ui, sans-serif'
+      ctx.textAlign = 'center'
+      ctx.fillText('ABSENSI', W / 2, padding + 36)
+      ctx.fillStyle = '#1f2937'
+      ctx.font = '600 28px system-ui, sans-serif'
+      ctx.fillText(orgName || 'Perusahaan Anda', W / 2, padding + 76)
+      // QR
+      ctx.drawImage(img, padding, padding + headerH)
+      // Footer
+      ctx.fillStyle = '#6b7280'
+      ctx.font = '22px system-ui, sans-serif'
+      ctx.fillText('Scan dengan kamera HP untuk absensi', W / 2, padding + headerH + img.height + 38)
+      ctx.fillStyle = '#9ca3af'
+      ctx.font = '18px system-ui, sans-serif'
+      ctx.fillText('© ' + new Date().getFullYear() + ' ' + (orgName || ''), W / 2, padding + headerH + img.height + 64)
+
+      const link = document.createElement('a')
+      link.download = `qr-absen-${companyCode}.png`
+      link.href = canvas.toDataURL('image/png')
+      link.click()
+    } catch {}
+    setDownloading(false)
+  }
+
+  if (!companyCode) {
+    return (
+      <div className="text-center py-10 text-gray-500 text-sm">
+        Kode perusahaan belum tersedia.
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-5">
+      <div>
+        <h2 className="font-semibold text-gray-800">QR Code Absensi</h2>
+        <p className="text-sm text-gray-400 mt-0.5">Cetak dan tempel di lokasi absensi. Karyawan scan → langsung scan wajah.</p>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+        {/* QR preview */}
+        <div className="flex flex-col items-center p-6 bg-gradient-to-br from-teal-50 to-gray-50 rounded-2xl border border-teal-100">
+          <p className="text-xs uppercase tracking-widest text-teal-700 font-bold mb-1">ABSENSI</p>
+          <p className="text-sm font-semibold text-gray-800 mb-3 text-center">{orgName || 'Perusahaan Anda'}</p>
+          <div className="bg-white p-3 rounded-xl shadow-sm">
+            {qrDataUrl ? (
+              <img src={qrDataUrl} alt="QR Absensi" className="w-56 h-56" />
+            ) : (
+              <div className="w-56 h-56 flex items-center justify-center text-xs text-gray-400">Memuat...</div>
+            )}
+          </div>
+          <p className="text-xs text-gray-500 mt-3 text-center max-w-[18rem]">
+            Scan dengan kamera HP untuk absensi
+          </p>
+        </div>
+
+        {/* Info & actions */}
+        <div className="space-y-4">
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Kode Perusahaan</label>
+            <div className="px-4 py-2.5 border border-gray-200 rounded-xl bg-gray-100 text-base font-bold tracking-widest text-teal-700">
+              {companyCode}
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Link Absensi</label>
+            <div className="flex gap-2">
+              <input
+                readOnly
+                value={absenUrl}
+                className="flex-1 px-3 py-2 border border-gray-200 rounded-xl bg-gray-50 text-xs text-gray-600 font-mono"
+              />
+              <button
+                onClick={handleCopy}
+                className="px-3 py-2 border border-gray-200 rounded-xl text-xs hover:bg-gray-50 text-gray-700 font-medium shrink-0"
+              >
+                {copied ? '✓ Tersalin' : 'Salin'}
+              </button>
+            </div>
+          </div>
+
+          <button
+            onClick={handleDownload}
+            disabled={!qrDataUrl || downloading}
+            className="w-full px-5 py-3 bg-teal-600 hover:bg-teal-700 disabled:opacity-60 text-white rounded-xl text-sm font-semibold flex items-center justify-center gap-2"
+          >
+            <span>⬇️</span> {downloading ? 'Mempersiapkan...' : 'Download QR (PNG)'}
+          </button>
+
+          <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 space-y-1">
+            <p className="font-semibold">⚠️ Penting</p>
+            <p>Fitur kamera & GPS browser hanya jalan di <strong>HTTPS</strong> (atau localhost). Pastikan domain aplikasi sudah pakai SSL sebelum QR ini dipakai.</p>
+          </div>
+
+          <div className="text-xs text-gray-500 space-y-1.5 leading-relaxed">
+            <p className="font-semibold text-gray-700">Cara pakai:</p>
+            <p>1. Klik <strong>Download QR</strong> untuk menyimpan gambar PNG resolusi tinggi.</p>
+            <p>2. Print ukuran A4/A5, tempel di pintu masuk atau meja absensi.</p>
+            <p>3. Karyawan datang → scan QR dengan kamera HP → buka link → izinkan kamera & lokasi → scan wajah.</p>
+          </div>
+        </div>
       </div>
     </div>
   )

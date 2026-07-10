@@ -170,6 +170,18 @@ export default function AbsenClient({ appName = 'AbsenKu' }: { appName?: string 
     } catch {}
   }, [])
 
+  // Auto-submit if ?code= is in the URL (e.g. from printed QR at office)
+  const autoSubmitRef = useRef(false)
+  useEffect(() => {
+    if (autoSubmitRef.current) return
+    const urlCode = new URLSearchParams(window.location.search).get('code')
+    if (urlCode && /^[A-Za-z0-9_-]+$/.test(urlCode)) {
+      autoSubmitRef.current = true
+      searchOrg(urlCode)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   // Fetch recent attendance whenever on scan step
   useEffect(() => {
     if (step === 'scan' && orgCode.trim()) {
@@ -225,20 +237,22 @@ export default function AbsenClient({ appName = 'AbsenKu' }: { appName?: string 
     return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
   }
 
-  const searchOrg = async () => {
-    if (!orgCode.trim()) return
+  const searchOrg = async (codeOverride?: string) => {
+    const code = (codeOverride ?? orgCode).trim()
+    if (!code) return
     setLoading(true)
     setError('')
     try {
-      const res = await fetch(`/api/public-employees?org_code=${encodeURIComponent(orgCode.trim())}`)
+      const res = await fetch(`/api/public-employees?org_code=${encodeURIComponent(code)}`)
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Gagal')
+      setOrgCode(code)
       setOrg({ id: data.org.id, name: data.org.name, address: data.org.address })
       setFaceRegCount(data.face_registration_count ?? 0)
-      try { localStorage.setItem('absenku_org_code', orgCode.trim()) } catch {}
+      try { localStorage.setItem('absenku_org_code', code) } catch {}
 
       // Fetch office locations
-      const locRes = await fetch(`/api/public-locations?org_code=${encodeURIComponent(orgCode.trim())}`)
+      const locRes = await fetch(`/api/public-locations?org_code=${encodeURIComponent(code)}`)
       const locData = await locRes.json()
       const locations: OfficeLocation[] = locData.locations ?? []
       setOfficeLocations(locations)
@@ -575,7 +589,7 @@ export default function AbsenClient({ appName = 'AbsenKu' }: { appName?: string 
                   className="w-full px-5 py-3.5 border border-gray-200 rounded-xl text-sm font-mono tracking-widest text-center text-lg focus:outline-none focus:ring-2 focus:ring-teal-400 focus:border-transparent"
                 />
                 <button
-                  onClick={searchOrg}
+                  onClick={() => searchOrg()}
                   disabled={loading || !orgCode.trim()}
                   className="w-full py-3.5 bg-teal-600 hover:bg-teal-700 disabled:opacity-50 text-white rounded-xl font-semibold transition-colors"
                 >
