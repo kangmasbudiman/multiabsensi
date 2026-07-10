@@ -269,7 +269,7 @@ function QrAbsenTab({ companyCode, orgName }: { companyCode: string; orgName: st
   const [origin, setOrigin] = useState('')
   const [qrDataUrl, setQrDataUrl] = useState('')
   const [copied, setCopied] = useState(false)
-  const [downloading, setDownloading] = useState(false)
+  const [downloading, setDownloading] = useState<'qr' | 'poster' | null>(null)
 
   const absenUrl = origin ? `${origin}/absen?code=${encodeURIComponent(companyCode)}` : ''
 
@@ -292,11 +292,17 @@ function QrAbsenTab({ companyCode, orgName }: { companyCode: string; orgName: st
     } catch {}
   }
 
-  const handleDownload = async () => {
+  const triggerDownload = (canvas: HTMLCanvasElement, filename: string) => {
+    const link = document.createElement('a')
+    link.download = filename
+    link.href = canvas.toDataURL('image/png')
+    link.click()
+  }
+
+  const handleDownloadQr = async () => {
     if (!qrDataUrl) return
-    setDownloading(true)
+    setDownloading('qr')
     try {
-      // Composite QR + label onto a printable canvas
       const img = new Image()
       img.src = qrDataUrl
       await new Promise(r => { img.onload = r })
@@ -329,12 +335,103 @@ function QrAbsenTab({ companyCode, orgName }: { companyCode: string; orgName: st
       ctx.font = '18px system-ui, sans-serif'
       ctx.fillText('© ' + new Date().getFullYear() + ' ' + (orgName || ''), W / 2, padding + headerH + img.height + 64)
 
-      const link = document.createElement('a')
-      link.download = `qr-absen-${companyCode}.png`
-      link.href = canvas.toDataURL('image/png')
-      link.click()
+      triggerDownload(canvas, `qr-absen-${companyCode}.png`)
     } catch {}
-    setDownloading(false)
+    setDownloading(null)
+  }
+
+  const handleDownloadPoster = async () => {
+    if (!qrDataUrl) return
+    setDownloading('poster')
+    try {
+      const qrImg = new Image()
+      qrImg.src = qrDataUrl
+      await new Promise(r => { qrImg.onload = r })
+
+      // A4 portrait @ ~110 DPI
+      const W = 900
+      const H = 1280
+      const canvas = document.createElement('canvas')
+      canvas.width = W
+      canvas.height = H
+      const ctx = canvas.getContext('2d')!
+
+      // Background
+      ctx.fillStyle = '#ffffff'
+      ctx.fillRect(0, 0, W, H)
+
+      // Top accent bar
+      ctx.fillStyle = '#0f766e'
+      ctx.fillRect(0, 0, W, 16)
+
+      // Header
+      ctx.textAlign = 'center'
+      ctx.fillStyle = '#0f766e'
+      ctx.font = 'bold 64px system-ui, sans-serif'
+      ctx.fillText('ABSENSI', W / 2, 110)
+      ctx.fillStyle = '#1f2937'
+      ctx.font = '600 36px system-ui, sans-serif'
+      ctx.fillText(orgName || 'Perusahaan Anda', W / 2, 160)
+
+      // QR card (white box with shadow border)
+      const qrSize = 440
+      const qrX = (W - qrSize) / 2
+      const qrY = 210
+      ctx.fillStyle = '#f9fafb'
+      ctx.fillRect(qrX - 20, qrY - 20, qrSize + 40, qrSize + 40)
+      ctx.strokeStyle = '#d1d5db'
+      ctx.lineWidth = 2
+      ctx.strokeRect(qrX - 20, qrY - 20, qrSize + 40, qrSize + 40)
+      ctx.drawImage(qrImg, qrX, qrY, qrSize, qrSize)
+
+      // Caption under QR
+      ctx.fillStyle = '#6b7280'
+      ctx.font = '24px system-ui, sans-serif'
+      ctx.fillText('📷 Arahkan kamera HP ke QR ini', W / 2, qrY + qrSize + 55)
+
+      // Instructions box
+      const boxY = qrY + qrSize + 95
+      const boxH = 360
+      ctx.fillStyle = '#f0fdfa'
+      ctx.fillRect(60, boxY, W - 120, boxH)
+      ctx.strokeStyle = '#99f6e4'
+      ctx.lineWidth = 2
+      ctx.strokeRect(60, boxY, W - 120, boxH)
+
+      // Box header
+      ctx.fillStyle = '#0f766e'
+      ctx.font = 'bold 30px system-ui, sans-serif'
+      ctx.fillText('CARA ABSENSI', W / 2, boxY + 48)
+
+      // Steps
+      const steps = [
+        { icon: '1️⃣', text: 'Buka kamera HP atau aplikasi scanner QR' },
+        { icon: '2️⃣', text: 'Arahkan ke QR code di atas — tunggu notifikasi' },
+        { icon: '3️⃣', text: 'Klik link yang muncul di layar HP' },
+        { icon: '4️⃣', text: 'Klik "Izinkan" saat diminta akses kamera' },
+        { icon: '5️⃣', text: 'Klik "Izinkan" saat diminta akses lokasi' },
+        { icon: '6️⃣', text: 'Hadapkan wajah ke layar sampai terdeteksi' },
+      ]
+      ctx.textAlign = 'left'
+      steps.forEach((step, i) => {
+        const y = boxY + 100 + i * 40
+        ctx.font = '24px system-ui, sans-serif'
+        ctx.fillStyle = '#0f766e'
+        ctx.fillText(step.icon, 110, y)
+        ctx.fillStyle = '#1f2937'
+        ctx.font = '22px system-ui, sans-serif'
+        ctx.fillText(step.text, 160, y)
+      })
+
+      // Footer
+      ctx.textAlign = 'center'
+      ctx.fillStyle = '#9ca3af'
+      ctx.font = '18px system-ui, sans-serif'
+      ctx.fillText('© ' + new Date().getFullYear() + ' ' + (orgName || '') + ' · Powered by AbsenKu', W / 2, H - 40)
+
+      triggerDownload(canvas, `poster-absen-${companyCode}.png`)
+    } catch {}
+    setDownloading(null)
   }
 
   if (!companyCode) {
@@ -394,13 +491,22 @@ function QrAbsenTab({ companyCode, orgName }: { companyCode: string; orgName: st
             </div>
           </div>
 
-          <button
-            onClick={handleDownload}
-            disabled={!qrDataUrl || downloading}
-            className="w-full px-5 py-3 bg-teal-600 hover:bg-teal-700 disabled:opacity-60 text-white rounded-xl text-sm font-semibold flex items-center justify-center gap-2"
-          >
-            <span>⬇️</span> {downloading ? 'Mempersiapkan...' : 'Download QR (PNG)'}
-          </button>
+          <div className="grid grid-cols-2 gap-3">
+            <button
+              onClick={handleDownloadQr}
+              disabled={!qrDataUrl || downloading !== null}
+              className="px-4 py-3 bg-white border-2 border-teal-200 hover:border-teal-400 disabled:opacity-60 text-teal-700 rounded-xl text-sm font-semibold flex items-center justify-center gap-2"
+            >
+              <span>⬇️</span> {downloading === 'qr' ? '...' : 'QR Saja'}
+            </button>
+            <button
+              onClick={handleDownloadPoster}
+              disabled={!qrDataUrl || downloading !== null}
+              className="px-4 py-3 bg-teal-600 hover:bg-teal-700 disabled:opacity-60 text-white rounded-xl text-sm font-semibold flex items-center justify-center gap-2"
+            >
+              <span>🖼️</span> {downloading === 'poster' ? '...' : 'Poster A4 + Instruksi'}
+            </button>
+          </div>
 
           <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800 space-y-1">
             <p className="font-semibold">⚠️ Penting</p>
@@ -408,10 +514,9 @@ function QrAbsenTab({ companyCode, orgName }: { companyCode: string; orgName: st
           </div>
 
           <div className="text-xs text-gray-500 space-y-1.5 leading-relaxed">
-            <p className="font-semibold text-gray-700">Cara pakai:</p>
-            <p>1. Klik <strong>Download QR</strong> untuk menyimpan gambar PNG resolusi tinggi.</p>
-            <p>2. Print ukuran A4/A5, tempel di pintu masuk atau meja absensi.</p>
-            <p>3. Karyawan datang → scan QR dengan kamera HP → buka link → izinkan kamera & lokasi → scan wajah.</p>
+            <p className="font-semibold text-gray-700">Pilihan download:</p>
+            <p>• <strong>QR Saja</strong> — gambar QR + header nama perusahaan. Cocok untuk tempel di kartu/marker kecil.</p>
+            <p>• <strong>Poster A4 + Instruksi</strong> — 1 halaman A4 berisi QR besar + 6 langkah cara absen. Print, tempel di dinding.</p>
           </div>
         </div>
       </div>
