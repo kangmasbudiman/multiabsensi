@@ -18,7 +18,8 @@ export default async function AttendancePage({
   const orgId = profile!.org_id!
 
   const params = await searchParams
-  const today = format(new Date(), 'yyyy-MM-dd')
+  // Consistent with attendance insert (Asia/Jakarta) — avoids date drift on UTC servers
+  const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Jakarta' })
   const selectedDate = params.date ?? today
   const search = params.search ?? ''
   const statusFilter = params.status ?? 'all'
