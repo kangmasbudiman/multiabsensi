@@ -744,8 +744,23 @@ export default function AbsenClient({ appName = 'AbsenKu' }: { appName?: string 
                 </div>
               )}
 
+              {/* Checking/unknown — neutral state while GPS is being verified */}
+              {!canScan && (locationStatus === 'checking' || locationStatus === 'unknown') && (
+                <div className="bg-white rounded-2xl shadow-2xl overflow-hidden">
+                  <div className="p-8 text-center">
+                    <div className="w-16 h-16 bg-teal-50 rounded-2xl flex items-center justify-center mx-auto mb-5">
+                      <div className="w-8 h-8 border-4 border-teal-500 border-t-transparent rounded-full animate-spin" />
+                    </div>
+                    <h2 className="text-lg font-bold text-gray-900 mb-2">Memeriksa Lokasi</h2>
+                    <p className="text-sm text-gray-500">
+                      Sistem sedang memverifikasi posisi Anda...
+                    </p>
+                  </div>
+                </div>
+              )}
+
               {/* Outside geofence card — camera disabled */}
-              {!canScan && (
+              {!canScan && locationStatus !== 'checking' && locationStatus !== 'unknown' && (
                 <div className="bg-white rounded-2xl shadow-2xl overflow-hidden">
                   <div className="p-8 text-center">
                     <div className="w-16 h-16 bg-red-50 rounded-2xl flex items-center justify-center mx-auto mb-5">
@@ -771,17 +786,9 @@ export default function AbsenClient({ appName = 'AbsenKu' }: { appName?: string 
                     </p>
                     <button
                       onClick={refreshLocation}
-                      disabled={locationStatus === 'checking'}
-                      className="px-4 py-2 bg-teal-600 hover:bg-teal-700 disabled:opacity-60 text-white rounded-xl text-sm font-semibold inline-flex items-center gap-2"
+                      className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-sm font-semibold inline-flex items-center gap-2"
                     >
-                      {locationStatus === 'checking' ? (
-                        <>
-                          <div className="w-3.5 h-3.5 border-2 border-white/50 border-t-white rounded-full animate-spin" />
-                          Memeriksa...
-                        </>
-                      ) : (
-                        <>🔄 Cek Ulang Lokasi</>
-                      )}
+                      🔄 Cek Ulang Lokasi
                     </button>
                   </div>
                 </div>

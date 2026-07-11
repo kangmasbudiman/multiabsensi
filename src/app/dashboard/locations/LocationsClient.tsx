@@ -140,11 +140,24 @@ export default function LocationsClient({ locations, orgId }: { locations: Offic
                     </span>
                   </div>
                 </div>
-                <div className="flex gap-1 shrink-0">
-                  <button onClick={() => openEdit(loc)} className="p-1.5 text-gray-400 hover:text-teal-600 hover:bg-teal-50 rounded-lg text-sm">✏️</button>
-                  <button onClick={() => toggleActive(loc)} className="p-1.5 text-gray-400 hover:text-orange-500 hover:bg-orange-50 rounded-lg text-sm">
-                    {loc.is_active ? '🔴' : '🟢'}
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={loc.is_active}
+                    onClick={() => toggleActive(loc)}
+                    title={loc.is_active ? 'Aktif — klik untuk nonaktifkan' : 'Nonaktif — klik untuk aktifkan'}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-teal-400 focus:ring-offset-2 ${
+                      loc.is_active ? 'bg-teal-500' : 'bg-gray-300'
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                        loc.is_active ? 'translate-x-6' : 'translate-x-1'
+                      }`}
+                    />
                   </button>
+                  <button onClick={() => openEdit(loc)} className="p-1.5 text-gray-400 hover:text-teal-600 hover:bg-teal-50 rounded-lg text-sm">✏️</button>
                   <button onClick={() => handleDelete(loc.id)} className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg text-sm">🗑️</button>
                 </div>
               </div>
