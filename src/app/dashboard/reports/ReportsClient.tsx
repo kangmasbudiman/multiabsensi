@@ -147,6 +147,15 @@ export default function ReportsClient({
     XLSX.utils.book_append_sheet(wb, wsRecap, 'Rekap Karyawan')
 
     // ── Sheet 2: Detail Pivot (dates as columns) ───────────────────────────
+    // Use non-numeric header labels (e.g., "1 Sen") — JS sorts integer-like
+    // string keys before named ones, which would put date columns on the left.
+    const dateHeaders = Array.from({ length: daysInMonth }, (_, i) => {
+      const ds = `${year}-${String(month).padStart(2, '0')}-${String(i + 1).padStart(2, '0')}`
+      const dow = new Date(ds + 'T00:00:00').getDay()
+      return `${i + 1} ${DAY_ABBR[dow]}`
+    })
+    const pivotHeaders = ['No', 'Nama', 'ID', 'Posisi', ...dateHeaders, 'Hadir', 'Total Jam Kerja']
+
     const pivotData: Record<string, unknown>[] = []
     let noPivot = 1
     for (const emp of filteredEmployees) {
@@ -175,14 +184,14 @@ export default function ReportsClient({
             cellText = statusLabels[att.status]?.short ?? att.status[0]?.toUpperCase() ?? '?'
           }
         }
-        row[String(d)] = cellText
+        row[dateHeaders[d - 1]] = cellText
       }
       row['Hadir'] = hadirCount
       row['Total Jam Kerja'] = `${Math.floor(totalMins / 60)}j ${totalMins % 60}m`
 
       pivotData.push(row)
     }
-    const wsPivot = XLSX.utils.json_to_sheet(pivotData)
+    const wsPivot = XLSX.utils.json_to_sheet(pivotData, { header: pivotHeaders })
     wsPivot['!cols'] = [
       { wch: 4 }, { wch: 25 }, { wch: 12 }, { wch: 18 },
       ...Array.from({ length: daysInMonth }, () => ({ wch: 11 })),
