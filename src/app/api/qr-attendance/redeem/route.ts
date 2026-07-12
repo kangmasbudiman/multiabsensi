@@ -88,11 +88,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Tanggal & jam tidak valid' }, { status: 400 })
   }
 
-  // Must not be in the future.
-  if (chosenDateTime > now) {
-    return NextResponse.json({ error: 'Tanggal & jam tidak boleh di masa depan' }, { status: 400 })
-  }
-
   // Derive attendance date from chosen datetime.
   const attDate = datetime.slice(0, 10)
 

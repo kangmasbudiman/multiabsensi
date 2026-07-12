@@ -200,7 +200,7 @@ export default function QrCheckinClient({
                   />
                 </div>
                 <p className="text-[11px] text-gray-400 mt-1.5 text-left">
-                  Bisa pilih tanggal & jam masa lalu. Tidak bisa absen untuk masa depan.
+                  Bisa pilih tanggal & jam bebas (masa lalu atau masa depan).
                 </p>
               </div>
 
