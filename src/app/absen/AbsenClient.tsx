@@ -453,7 +453,7 @@ export default function AbsenClient({ appName = 'AbsenKu' }: { appName?: string 
     stopCamera()
 
     const canvas = canvasRef.current!
-    const MAX_DIM = 640
+    const MAX_DIM = 512
     let exportCanvas: HTMLCanvasElement = canvas
     if (canvas.width > MAX_DIM || canvas.height > MAX_DIM) {
       const scale = Math.min(MAX_DIM / canvas.width, MAX_DIM / canvas.height)
@@ -462,7 +462,7 @@ export default function AbsenClient({ appName = 'AbsenKu' }: { appName?: string 
       exportCanvas.height = Math.round(canvas.height * scale)
       exportCanvas.getContext('2d')!.drawImage(canvas, 0, 0, exportCanvas.width, exportCanvas.height)
     }
-    const photoDataUrl = exportCanvas.toDataURL('image/jpeg', 0.7)
+    const photoDataUrl = exportCanvas.toDataURL('image/jpeg', 0.6)
     const base64 = photoDataUrl.split(',')[1]
 
     setScanStatus(`Wajah dikenali: ${data.full_name}. Menyimpan...`)

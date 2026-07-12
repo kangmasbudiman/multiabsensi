@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 
-const RETENTION_DAYS = 60
+const RETENTION_DAYS = 45
 const BATCH_SIZE = 200
 
 export async function GET(req: NextRequest) {
