@@ -16,10 +16,18 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json()
-  const { token } = body
+  const { token, type, datetime } = body
 
   if (!token) {
     return NextResponse.json({ error: 'Token diperlukan' }, { status: 400 })
+  }
+
+  if (!type || !['checkin', 'checkout'].includes(type)) {
+    return NextResponse.json({ error: 'type harus checkin atau checkout' }, { status: 400 })
+  }
+
+  if (!datetime || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(datetime)) {
+    return NextResponse.json({ error: 'Format tanggal & jam tidak valid' }, { status: 400 })
   }
 
   const admin = createAdminClient()
@@ -59,26 +67,39 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Karyawan tidak valid' }, { status: 403 })
   }
 
-  const today = now.toLocaleDateString('sv-SE', { timeZone: 'Asia/Jakarta' })
-  const timeStr = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' })
+  // Parse friend-chosen datetime as Jakarta time (UTC+7, no DST).
+  const chosenDateTime = new Date(`${datetime}:00+07:00`)
+  if (isNaN(chosenDateTime.getTime())) {
+    return NextResponse.json({ error: 'Tanggal & jam tidak valid' }, { status: 400 })
+  }
 
-  // Check existing attendance for today
+  // Must not be in the future.
+  if (chosenDateTime > now) {
+    return NextResponse.json({ error: 'Tanggal & jam tidak boleh di masa depan' }, { status: 400 })
+  }
+
+  // Derive attendance date from chosen datetime.
+  const attDate = datetime.slice(0, 10)
+
+  // Check existing attendance for the chosen date
   const { data: existingAtt } = await admin
     .from('attendances')
     .select('id, check_in_time, check_out_time, shift_id')
     .eq('user_id', qrToken.user_id)
-    .eq('date', today)
+    .eq('date', attDate)
     .maybeSingle()
 
-  // Night shift: also check yesterday's record if no record today
-  let yesterdayAtt = null
+  // Night shift: also check previous day's record if none on chosen date
+  let prevDayAtt = null
   if (!existingAtt) {
-    const yesterday = new Date(now.getTime() - 86400000).toLocaleDateString('sv-SE', { timeZone: 'Asia/Jakarta' })
+    const prevDay = new Date(attDate)
+    prevDay.setUTCDate(prevDay.getUTCDate() - 1)
+    const prevDateStr = prevDay.toISOString().slice(0, 10)
     const { data: yd } = await admin
       .from('attendances')
       .select('id, check_in_time, check_out_time, shift_id')
       .eq('user_id', qrToken.user_id)
-      .eq('date', yesterday)
+      .eq('date', prevDateStr)
       .is('check_out_time', null)
       .maybeSingle()
 
@@ -89,30 +110,31 @@ export async function POST(req: NextRequest) {
         .eq('id', yd.shift_id)
         .single()
       if (shift?.crosses_midnight) {
-        yesterdayAtt = yd
+        prevDayAtt = yd
       }
     }
   }
 
-  const activeAtt = existingAtt || yesterdayAtt
+  const activeAtt = existingAtt || prevDayAtt
+  const chosenIso = chosenDateTime.toISOString()
 
-  let attendanceType: 'checkin' | 'checkout'
   let attendanceId: string
 
-  if (qrToken.type === 'checkout') {
-    // QR specifically for checkout
+  if (type === 'checkout') {
     if (!activeAtt?.check_in_time) {
-      return NextResponse.json({ error: 'Karyawan belum check-in' }, { status: 400 })
+      return NextResponse.json({ error: 'Karyawan belum check-in hari ini' }, { status: 400 })
     }
     if (activeAtt.check_out_time) {
       return NextResponse.json({ error: 'Karyawan sudah check-out' }, { status: 400 })
     }
+    if (chosenDateTime <= new Date(activeAtt.check_in_time)) {
+      return NextResponse.json({ error: 'Jam check-out harus setelah check-in' }, { status: 400 })
+    }
 
-    // Update existing record with checkout
     const { error: updateError } = await admin
       .from('attendances')
       .update({
-        check_out_time: now.toISOString(),
+        check_out_time: chosenIso,
         method: 'qr_admin',
         is_verified: true,
         verified_by: qrToken.generated_by,
@@ -125,61 +147,39 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Gagal menyimpan check-out' }, { status: 500 })
     }
 
-    attendanceType = 'checkout'
     attendanceId = activeAtt.id
   } else {
-    // QR for checkin
+    // type === 'checkin'
     if (activeAtt?.check_in_time) {
-      // Already checked in — use as checkout instead
-      if (activeAtt.check_out_time) {
-        return NextResponse.json({ error: 'Sudah check-in dan check-out' }, { status: 400 })
-      }
-
-      const { error: updateError } = await admin
-        .from('attendances')
-        .update({
-          check_out_time: now.toISOString(),
-          method: 'qr_admin',
-          is_verified: true,
-          verified_by: qrToken.generated_by,
-          notes: 'QR Admin Check-out',
-        })
-        .eq('id', activeAtt.id)
-
-      if (updateError) {
-        console.error('QR checkout update error:', updateError)
-        return NextResponse.json({ error: 'Gagal menyimpan check-out' }, { status: 500 })
-      }
-
-      attendanceType = 'checkout'
-      attendanceId = activeAtt.id
-    } else {
-      // No record yet — insert check-in
-      const { data: newAtt, error: insertError } = await admin
-        .from('attendances')
-        .insert({
-          user_id: qrToken.user_id,
-          date: today,
-          check_in_time: now.toISOString(),
-          shift_id: qrToken.shift_id,
-          office_location_id: qrToken.office_location_id,
-          status: 'hadir',
-          method: 'qr_admin',
-          is_verified: true,
-          verified_by: qrToken.generated_by,
-          notes: 'QR Admin Check-in',
-        })
-        .select('id')
-        .single()
-
-      if (insertError || !newAtt) {
-        console.error('QR checkin insert error:', insertError)
-        return NextResponse.json({ error: 'Gagal menyimpan check-in' }, { status: 500 })
-      }
-
-      attendanceType = 'checkin'
-      attendanceId = newAtt.id
+      return NextResponse.json(
+        { error: 'Sudah check-in hari ini, pilih check-out' },
+        { status: 400 }
+      )
     }
+
+    const { data: newAtt, error: insertError } = await admin
+      .from('attendances')
+      .insert({
+        user_id: qrToken.user_id,
+        date: attDate,
+        check_in_time: chosenIso,
+        shift_id: qrToken.shift_id,
+        office_location_id: qrToken.office_location_id,
+        status: 'hadir',
+        method: 'qr_admin',
+        is_verified: true,
+        verified_by: qrToken.generated_by,
+        notes: 'QR Admin Check-in',
+      })
+      .select('id')
+      .single()
+
+    if (insertError || !newAtt) {
+      console.error('QR checkin insert error:', insertError)
+      return NextResponse.json({ error: 'Gagal menyimpan check-in' }, { status: 500 })
+    }
+
+    attendanceId = newAtt.id
   }
 
   // Mark token as used
@@ -195,8 +195,9 @@ export async function POST(req: NextRequest) {
 
   return NextResponse.json({
     success: true,
-    type: attendanceType,
-    time: timeStr,
+    type,
+    time: datetime.slice(11),
+    date: attDate,
     employee_name: employee.full_name,
   })
 }

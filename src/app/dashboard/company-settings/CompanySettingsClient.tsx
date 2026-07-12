@@ -16,6 +16,7 @@ interface Org {
   owner_email: string
   owner_phone?: string
   logo_url?: string
+  base_url?: string | null
 }
 
 interface Announcement {
@@ -90,7 +91,14 @@ export default function CompanySettingsClient({ org, announcements: initAnnounce
 
         <div className="p-6">
           {activeTab === 'info' && <CompanyInfoTab org={org} orgId={orgId} />}
-          {activeTab === 'qr' && <QrAbsenTab companyCode={org?.company_code ?? ''} orgName={org?.name ?? ''} />}
+          {activeTab === 'qr' && (
+            <QrAbsenTab
+              companyCode={org?.company_code ?? ''}
+              orgName={org?.name ?? ''}
+              orgId={orgId}
+              savedBaseUrl={org?.base_url ?? ''}
+            />
+          )}
           {activeTab === 'announcements' && (
             <AnnouncementsTab
               announcements={announcements}
@@ -265,17 +273,53 @@ function CompanyInfoTab({ org, orgId }: { org: Org | null; orgId: string }) {
   )
 }
 
-function QrAbsenTab({ companyCode, orgName }: { companyCode: string; orgName: string }) {
+function QrAbsenTab({
+  companyCode,
+  orgName,
+  orgId,
+  savedBaseUrl,
+}: {
+  companyCode: string
+  orgName: string
+  orgId: string
+  savedBaseUrl: string
+}) {
+  const router = useRouter()
+  const supabase = createClient()
   const [origin, setOrigin] = useState('')
+  const [baseUrlInput, setBaseUrlInput] = useState(savedBaseUrl)
+  const [savedBase, setSavedBase] = useState(savedBaseUrl)
+  const [savingUrl, setSavingUrl] = useState(false)
+  const [urlMsg, setUrlMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const [qrDataUrl, setQrDataUrl] = useState('')
   const [copied, setCopied] = useState(false)
   const [downloading, setDownloading] = useState<'qr' | 'poster' | null>(null)
 
-  const absenUrl = origin ? `${origin}/absen?code=${encodeURIComponent(companyCode)}` : ''
-
   useEffect(() => {
     if (typeof window !== 'undefined') setOrigin(window.location.origin)
   }, [])
+
+  const effectiveBase = (() => {
+    const trimmed = savedBase.trim()
+    if (trimmed) return trimmed.replace(/\/+$/, '')
+    return origin
+  })()
+  const absenUrl = effectiveBase ? `${effectiveBase}/absen?code=${encodeURIComponent(companyCode)}` : ''
+
+  const handleSaveBaseUrl = async () => {
+    setSavingUrl(true)
+    setUrlMsg(null)
+    const trimmed = baseUrlInput.trim().replace(/\/+$/, '')
+    const { error } = await supabase.from('organizations').update({ base_url: trimmed || null }).eq('id', orgId)
+    if (error) {
+      setUrlMsg({ type: 'error', text: error.message })
+    } else {
+      setSavedBase(trimmed)
+      setUrlMsg({ type: 'success', text: 'URL dasar disimpan.' })
+      router.refresh()
+    }
+    setSavingUrl(false)
+  }
 
   useEffect(() => {
     if (!absenUrl) return
@@ -474,8 +518,40 @@ function QrAbsenTab({ companyCode, orgName }: { companyCode: string; orgName: st
               {companyCode}
             </div>
           </div>
+
+          {/* URL dasar (editable) */}
           <div>
-            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Link Absensi</label>
+            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">
+              URL Dasar (Domain Publik)
+            </label>
+            <input
+              type="text"
+              value={baseUrlInput}
+              onChange={e => setBaseUrlInput(e.target.value)}
+              placeholder="https://absenku.perusahaan.com"
+              className="w-full px-3 py-2 border border-gray-200 rounded-xl text-xs font-mono focus:outline-none focus:ring-2 focus:ring-teal-500 bg-gray-50/50"
+            />
+            <div className="flex items-center justify-between mt-1.5">
+              <p className="text-[11px] text-gray-400">
+                Kosongkan untuk otomatis pakai origin saat ini: <code className="text-gray-500">{origin || '—'}</code>
+              </p>
+              <button
+                onClick={handleSaveBaseUrl}
+                disabled={savingUrl}
+                className="px-3 py-1.5 bg-teal-600 hover:bg-teal-700 disabled:opacity-60 text-white rounded-lg text-xs font-semibold shrink-0"
+              >
+                {savingUrl ? 'Menyimpan...' : 'Simpan URL'}
+              </button>
+            </div>
+            {urlMsg && (
+              <p className={`text-[11px] mt-1 ${urlMsg.type === 'success' ? 'text-teal-700' : 'text-red-600'}`}>
+                {urlMsg.text}
+              </p>
+            )}
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-1.5">Link Absensi Aktif</label>
             <div className="flex gap-2">
               <input
                 readOnly

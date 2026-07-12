@@ -43,7 +43,12 @@ export default async function AttendancePage({
     .eq('date', selectedDate)
     .in('user_id', employeeIds.length > 0 ? employeeIds : ['__none__'])
 
-  if (attError) console.error('Attendance query error:', attError)
+  if (attError) console.error('Attendance query error:', {
+    message: attError.message,
+    code: attError.code,
+    details: attError.details,
+    hint: attError.hint,
+  })
 
   const attendanceMap = new Map((attendances ?? []).map(a => [a.user_id, a]))
 

@@ -45,7 +45,6 @@ export default function QrAttendanceClient({
   const [search, setSearch] = useState('')
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null)
   const [dropdownOpen, setDropdownOpen] = useState(false)
-  const [qrType, setQrType] = useState<'checkin' | 'checkout'>('checkin')
   const [expiryMinutes, setExpiryMinutes] = useState(30)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -128,7 +127,6 @@ export default function QrAttendanceClient({
         body: JSON.stringify({
           user_id: selectedEmployee.id,
           org_id: selectedCompany.id,
-          type: qrType,
           expiry_minutes: expiryMinutes,
         }),
       })
@@ -186,10 +184,10 @@ export default function QrAttendanceClient({
       <div>
         <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
           <QrCode className="w-6 h-6 text-teal-600" />
-          QR Admin Check-in
+          QR Admin Absensi
         </h1>
         <p className="text-sm text-gray-500 mt-1">
-          Generate QR code untuk mencatat kehadiran karyawan tanpa verifikasi wajah & lokasi
+          Generate QR code untuk karyawan — mereka pilih sendiri check-in/check-out & jam absen saat buka link. Tanpa verifikasi wajah & lokasi.
         </p>
       </div>
 
@@ -321,30 +319,6 @@ export default function QrAttendanceClient({
                     )}
                   </div>
 
-                  {/* Type Selection */}
-                  <div className="mt-4 flex gap-3">
-                    <button
-                      onClick={() => setQrType('checkin')}
-                      className={`flex-1 py-2 rounded-xl text-sm font-medium transition-colors border ${
-                        qrType === 'checkin'
-                          ? 'bg-teal-50 border-teal-300 text-teal-700'
-                          : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'
-                      }`}
-                    >
-                      📥 Check-in
-                    </button>
-                    <button
-                      onClick={() => setQrType('checkout')}
-                      className={`flex-1 py-2 rounded-xl text-sm font-medium transition-colors border ${
-                        qrType === 'checkout'
-                          ? 'bg-blue-50 border-blue-300 text-blue-700'
-                          : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'
-                      }`}
-                    >
-                      📤 Check-out
-                    </button>
-                  </div>
-
                   {/* Expiry */}
                   <div className="mt-4 flex items-center gap-3">
                     <Clock className="w-4 h-4 text-gray-400 shrink-0" />
@@ -403,7 +377,7 @@ export default function QrAttendanceClient({
                       <div className="text-left">
                         <p className="text-sm font-semibold text-teal-800">{qrData.employee_name}</p>
                         <p className="text-xs text-teal-600">
-                          {qrData.type === 'checkin' ? '📥 Check-in' : '📤 Check-out'}
+                          Pilihan User (check-in / check-out)
                         </p>
                       </div>
                     </div>
@@ -492,9 +466,13 @@ export default function QrAttendanceClient({
                           </div>
                         </td>
                         <td className="px-4 py-3">
-                          <span className={`text-xs font-medium ${t.type === 'checkin' ? 'text-teal-600' : 'text-blue-600'}`}>
-                            {t.type === 'checkin' ? '📥 Check-in' : '📤 Check-out'}
-                          </span>
+                          {t.type === 'checkin' ? (
+                            <span className="text-xs font-medium text-teal-600">📥 Check-in</span>
+                          ) : t.type === 'checkout' ? (
+                            <span className="text-xs font-medium text-blue-600">📤 Check-out</span>
+                          ) : (
+                            <span className="text-xs font-medium text-gray-500">🔄 Pilihan User</span>
+                          )}
                         </td>
                         <td className="px-4 py-3 text-gray-500 font-mono text-xs">{fmtTime(t.created_at)}</td>
                         <td className="px-4 py-3">{statusBadge(t.status)}</td>

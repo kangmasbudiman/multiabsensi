@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { Check, XCircle, Clock, Shield, QrCode } from 'lucide-react'
 
 type PageState = 'confirm' | 'loading' | 'success' | 'error'
+type ChosenType = 'checkin' | 'checkout'
 
 export default function QrCheckinClient({
   token,
@@ -26,8 +27,24 @@ export default function QrCheckinClient({
 }) {
   const [state, setState] = useState<PageState>(isValid ? 'confirm' : 'error')
   const [errorMsg, setErrorMsg] = useState(isValid ? '' : 'QR code tidak valid atau sudah kadaluarsa')
-  const [result, setResult] = useState<{ type: string; time: string; employee_name: string } | null>(null)
+  const [result, setResult] = useState<{ type: string; time: string; date?: string; employee_name: string } | null>(null)
   const [countdown, setCountdown] = useState('')
+
+  // Friend-chosen type: default from token, else check-in. Friend can toggle.
+  const [chosenType, setChosenType] = useState<ChosenType>(
+    tokenType === 'checkout' ? 'checkout' : 'checkin'
+  )
+  // Friend-chosen datetime (YYYY-MM-DDTHH:MM), default = now in Jakarta.
+  // Built from Intl parts to guarantee colon-separated HH:MM regardless of locale.
+  const [chosenDatetime, setChosenDatetime] = useState(() => {
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', hour12: false,
+      timeZone: 'Asia/Jakarta',
+    }).formatToParts(new Date())
+    const get = (t: string) => parts.find(p => p.type === t)?.value ?? ''
+    return `${get('year')}-${get('month')}-${get('day')}T${get('hour')}:${get('minute')}`
+  })
 
   // Countdown for expiry
   useEffect(() => {
@@ -54,7 +71,7 @@ export default function QrCheckinClient({
       const res = await fetch('/api/qr-attendance/redeem', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token }),
+        body: JSON.stringify({ token, type: chosenType, datetime: chosenDatetime }),
       })
       const data = await res.json()
       if (!res.ok) {
@@ -70,9 +87,6 @@ export default function QrCheckinClient({
     }
   }
 
-  const now = new Date()
-  const currentTime = now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' })
-
   return (
     <div className="min-h-screen bg-gradient-to-b from-slate-900 via-teal-950 to-slate-900 flex flex-col">
       {/* Header */}
@@ -84,7 +98,7 @@ export default function QrCheckinClient({
             </div>
             <div>
               <span className="text-white font-bold text-base">{orgName || 'AbsenKu'}</span>
-              <span className="text-white/50 text-xs block leading-tight">QR Admin Check-in</span>
+              <span className="text-white/50 text-xs block leading-tight">QR Admin Absensi</span>
             </div>
           </div>
           <span className="text-teal-400/80 text-xs font-medium bg-teal-400/10 px-2.5 py-1 rounded-full">
@@ -121,11 +135,9 @@ export default function QrCheckinClient({
                   <Shield className="w-7 h-7 text-white" />
                 </div>
               </div>
-              <h2 className="text-xl font-bold text-gray-900 mb-1">
-                Konfirmasi {tokenType === 'checkin' ? 'Check-in' : 'Check-out'}
-              </h2>
+              <h2 className="text-xl font-bold text-gray-900 mb-1">Konfirmasi Absensi</h2>
               <p className="text-sm text-gray-500 mb-6">
-                Data berikut akan dicatat sebagai hadir
+                Pilih jenis absensi dan jam, lalu konfirmasi
               </p>
 
               {/* Employee Info */}
@@ -144,14 +156,58 @@ export default function QrCheckinClient({
                 </div>
               </div>
 
-              {/* Time & Expiry */}
-              <div className="flex gap-3 mb-6">
-                <div className="flex-1 bg-teal-50 rounded-xl px-4 py-3 text-center">
-                  <p className="text-xs text-teal-600 mb-1">Waktu</p>
-                  <p className="text-lg font-bold text-teal-700">{currentTime} WIB</p>
+              {/* Type Selector */}
+              <div className="mb-4">
+                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2 text-left">
+                  Jenis Absensi
+                </label>
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setChosenType('checkin')}
+                    className={`flex-1 py-3 rounded-xl text-sm font-medium transition-colors border ${
+                      chosenType === 'checkin'
+                        ? 'bg-teal-50 border-teal-300 text-teal-700'
+                        : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'
+                    }`}
+                  >
+                    📥 Check-in
+                  </button>
+                  <button
+                    onClick={() => setChosenType('checkout')}
+                    className={`flex-1 py-3 rounded-xl text-sm font-medium transition-colors border ${
+                      chosenType === 'checkout'
+                        ? 'bg-blue-50 border-blue-300 text-blue-700'
+                        : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'
+                    }`}
+                  >
+                    📤 Check-out
+                  </button>
                 </div>
+              </div>
+
+              {/* DateTime Picker */}
+              <div className="mb-4">
+                <label className="block text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2 text-left">
+                  Tanggal & Jam Absen (WIB)
+                </label>
+                <div className="relative">
+                  <Clock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                  <input
+                    type="datetime-local"
+                    value={chosenDatetime}
+                    onChange={e => setChosenDatetime(e.target.value)}
+                    className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl text-base font-mono font-semibold text-gray-800 focus:outline-none focus:ring-2 focus:ring-teal-400 focus:border-transparent"
+                  />
+                </div>
+                <p className="text-[11px] text-gray-400 mt-1.5 text-left">
+                  Bisa pilih tanggal & jam masa lalu. Tidak bisa absen untuk masa depan.
+                </p>
+              </div>
+
+              {/* Expiry */}
+              <div className="flex gap-3 mb-6">
                 <div className="flex-1 bg-amber-50 rounded-xl px-4 py-3 text-center">
-                  <p className="text-xs text-amber-600 mb-1">Berlaku</p>
+                  <p className="text-xs text-amber-600 mb-1">QR Berlaku</p>
                   <p className="text-lg font-mono font-bold text-amber-700">{countdown}</p>
                 </div>
               </div>
@@ -166,10 +222,12 @@ export default function QrCheckinClient({
               {/* Confirm Button */}
               <button
                 onClick={handleConfirm}
-                className="w-full py-3.5 bg-teal-600 hover:bg-teal-700 text-white rounded-xl font-semibold transition-colors flex items-center justify-center gap-2"
+                className={`w-full py-3.5 text-white rounded-xl font-semibold transition-colors flex items-center justify-center gap-2 ${
+                  chosenType === 'checkin' ? 'bg-teal-600 hover:bg-teal-700' : 'bg-blue-600 hover:bg-blue-700'
+                }`}
               >
                 <Check className="w-5 h-5" />
-                Konfirmasi {tokenType === 'checkin' ? 'Check-in' : 'Check-out'}
+                Konfirmasi {chosenType === 'checkin' ? 'Check-in' : 'Check-out'}
               </button>
             </div>
           )}
@@ -201,9 +259,12 @@ export default function QrCheckinClient({
               <p className="text-sm text-gray-500 mb-5">{result.employee_name}</p>
               <div className="bg-teal-50 rounded-xl px-6 py-4 mb-4">
                 <p className="text-3xl font-bold text-teal-600">{result.time} WIB</p>
+                {result.date && (
+                  <p className="text-sm text-teal-600/70 mt-1">{result.date}</p>
+                )}
               </div>
               <p className="text-xs text-gray-400">
-                Dicatat via QR Admin · {currentTime}
+                Dicatat via QR Admin
               </p>
             </div>
           )}

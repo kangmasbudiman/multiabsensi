@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
 
   // Parse request body
   const body = await req.json()
-  const { user_id, org_id, type = 'checkin', expiry_minutes = 30 } = body
+  const { user_id, org_id, type = 'any', expiry_minutes = 30 } = body
 
   if (!user_id) {
     return NextResponse.json({ error: 'user_id diperlukan' }, { status: 400 })
@@ -49,8 +49,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'org_id diperlukan' }, { status: 400 })
   }
 
-  if (!['checkin', 'checkout'].includes(type)) {
-    return NextResponse.json({ error: 'type harus checkin atau checkout' }, { status: 400 })
+  if (!['checkin', 'checkout', 'any'].includes(type)) {
+    return NextResponse.json({ error: 'type harus checkin, checkout, atau any' }, { status: 400 })
   }
 
   // Validate target employee
@@ -64,23 +64,26 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Karyawan tidak valid' }, { status: 404 })
   }
 
-  // Check today's attendance
-  const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Jakarta' })
-  const { data: existingAtt } = await admin
-    .from('attendances')
-    .select('id, check_in_time, check_out_time')
-    .eq('user_id', user_id)
-    .eq('date', today)
-    .maybeSingle()
+  // Only pre-validate attendance state for fixed-type tokens.
+  // type='any' lets the friend choose at redeem time, so skip here.
+  if (type !== 'any') {
+    const today = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Jakarta' })
+    const { data: existingAtt } = await admin
+      .from('attendances')
+      .select('id, check_in_time, check_out_time')
+      .eq('user_id', user_id)
+      .eq('date', today)
+      .maybeSingle()
 
-  if (type === 'checkin' && existingAtt?.check_in_time) {
-    return NextResponse.json({ error: 'Karyawan sudah check-in hari ini' }, { status: 400 })
-  }
-  if (type === 'checkout' && existingAtt?.check_out_time) {
-    return NextResponse.json({ error: 'Karyawan sudah check-out hari ini' }, { status: 400 })
-  }
-  if (type === 'checkout' && !existingAtt?.check_in_time) {
-    return NextResponse.json({ error: 'Karyawan belum check-in hari ini' }, { status: 400 })
+    if (type === 'checkin' && existingAtt?.check_in_time) {
+      return NextResponse.json({ error: 'Karyawan sudah check-in hari ini' }, { status: 400 })
+    }
+    if (type === 'checkout' && existingAtt?.check_out_time) {
+      return NextResponse.json({ error: 'Karyawan sudah check-out hari ini' }, { status: 400 })
+    }
+    if (type === 'checkout' && !existingAtt?.check_in_time) {
+      return NextResponse.json({ error: 'Karyawan belum check-in hari ini' }, { status: 400 })
+    }
   }
 
   // Find employee's active shift for today
@@ -99,6 +102,13 @@ export async function POST(req: NextRequest) {
     .eq('is_active', true)
     .limit(1)
     .maybeSingle()
+
+  // Fetch org's configured public base URL (if any)
+  const { data: orgRow } = await admin
+    .from('organizations')
+    .select('base_url')
+    .eq('id', org_id)
+    .single()
 
   // Calculate expiry
   const now = new Date()
@@ -126,9 +136,13 @@ export async function POST(req: NextRequest) {
   }
 
   // Generate QR code data URL
-  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || process.env.NEXT_PUBLIC_VERCEL_URL
-    ? `https://${process.env.NEXT_PUBLIC_VERCEL_URL}`
-    : 'http://localhost:3000'
+  // Priority: org.base_url (admin-configured) > NEXT_PUBLIC_BASE_URL > VERCEL_URL > localhost
+  const orgBaseUrl = orgRow?.base_url?.trim().replace(/\/+$/, '')
+  const baseUrl =
+    orgBaseUrl ??
+    process.env.NEXT_PUBLIC_BASE_URL ??
+    (process.env.NEXT_PUBLIC_VERCEL_URL ? `https://${process.env.NEXT_PUBLIC_VERCEL_URL}` : null) ??
+    'http://localhost:3000'
   const qrUrl = `${baseUrl}/qr-checkin/${qrToken.token}`
   const qrDataUrl = await QRCode.toDataURL(qrUrl, {
     width: 256,
