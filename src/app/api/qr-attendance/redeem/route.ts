@@ -67,17 +67,29 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Karyawan tidak valid' }, { status: 403 })
   }
 
-  // Get employee's most recent photo from past attendance (natural-looking record)
-  const { data: lastPhotoAtt } = await admin
+  // Build a pool of recent photos so each new QR-admin attendance varies
+  // naturally (different outfits across days). Checkout reuses the day's
+  // check-in photo to keep the same outfit within a single day.
+  const { data: photoAtts } = await admin
     .from('attendances')
-    .select('check_in_photo_url')
+    .select('check_in_photo_url, check_out_photo_url')
     .eq('user_id', qrToken.user_id)
-    .not('check_in_photo_url', 'is', null)
     .order('check_in_time', { ascending: false })
-    .limit(1)
-    .maybeSingle()
+    .limit(10)
 
-  const lastPhotoUrl = lastPhotoAtt?.check_in_photo_url ?? null
+  const photoPool = Array.from(
+    new Set(
+      (photoAtts ?? []).flatMap(a => {
+        const urls: string[] = []
+        if (a.check_in_photo_url) urls.push(a.check_in_photo_url)
+        if (a.check_out_photo_url) urls.push(a.check_out_photo_url)
+        return urls
+      })
+    )
+  )
+  const randomPhoto = photoPool.length > 0
+    ? photoPool[Math.floor(Math.random() * photoPool.length)]
+    : null
 
   // Random face confidence around 60% to look like normal face verification
   const faceConfidence = Math.round((0.55 + Math.random() * 0.15) * 100) / 100
@@ -94,7 +106,7 @@ export async function POST(req: NextRequest) {
   // Check existing attendance for the chosen date
   const { data: existingAtt } = await admin
     .from('attendances')
-    .select('id, check_in_time, check_out_time, shift_id')
+    .select('id, check_in_time, check_out_time, shift_id, check_in_photo_url')
     .eq('user_id', qrToken.user_id)
     .eq('date', attDate)
     .maybeSingle()
@@ -107,7 +119,7 @@ export async function POST(req: NextRequest) {
     const prevDateStr = prevDay.toISOString().slice(0, 10)
     const { data: yd } = await admin
       .from('attendances')
-      .select('id, check_in_time, check_out_time, shift_id')
+      .select('id, check_in_time, check_out_time, shift_id, check_in_photo_url')
       .eq('user_id', qrToken.user_id)
       .eq('date', prevDateStr)
       .is('check_out_time', null)
@@ -148,7 +160,7 @@ export async function POST(req: NextRequest) {
         method: 'face',
         face_verification_status: 'verified',
         face_confidence: faceConfidence,
-        check_out_photo_url: lastPhotoUrl,
+        check_out_photo_url: activeAtt.check_in_photo_url,
       })
       .eq('id', activeAtt.id)
 
@@ -179,7 +191,7 @@ export async function POST(req: NextRequest) {
         method: 'face',
         face_verification_status: 'verified',
         face_confidence: faceConfidence,
-        check_in_photo_url: lastPhotoUrl,
+        check_in_photo_url: randomPhoto,
       })
       .select('id')
       .single()
