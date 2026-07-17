@@ -69,7 +69,11 @@ export async function POST(req: NextRequest) {
   }
 
   const body = await req.json()
-  const { user_id, org_code, photo_base64, face_verified, face_confidence, latitude, longitude, device_fingerprint } = body
+  const {
+    user_id, org_code, photo_base64, face_verified, face_confidence,
+    latitude, longitude, accuracy, gps_samples, gps_jitter, gps_mock,
+    device_fingerprint,
+  } = body
 
   if (!user_id || !org_code || !photo_base64) {
     return NextResponse.json({ error: 'Data tidak lengkap' }, { status: 400 })
@@ -87,6 +91,33 @@ export async function POST(req: NextRequest) {
   if (!org) {
     return NextResponse.json({ error: 'Kode perusahaan tidak valid' }, { status: 404 })
   }
+
+  // Anti-spoof GPS validation. Real GPS has natural jitter antar sample dan
+  // akurasi 5-50m. Fake GPS hampir selalu return koordinat identik (jitter=0)
+  // atau akurasi terlalu sempurna (<3m). Android Chrome juga set isMockProvider.
+  if (gps_mock === true) {
+    return NextResponse.json(
+      { error: 'Lokasi terdeteksi sebagai mock/simbol lokasi palsu. Nonaktifkan fake GPS.' },
+      { status: 403 }
+    )
+  }
+  if (accuracy != null && accuracy > 200) {
+    return NextResponse.json(
+      { error: `Sinyal GPS terlalu lemah (akurasi ±${Math.round(accuracy)}m). Pindah ke lokasi terbuka.` },
+      { status: 403 }
+    )
+  }
+  if (Array.isArray(gps_samples) && gps_samples.length >= 2 && gps_jitter === 0) {
+    return NextResponse.json(
+      { error: 'Pembacaan GPS tidak natural (tidak ada jitter). Kemungkinan lokasi palsu.' },
+      { status: 403 }
+    )
+  }
+  // Flag suspected (accuracy terlalu sempurna / jitter sangat rendah) — tetap accept,
+  // tapi tandai di DB untuk review admin.
+  const gpsSuspected =
+    (accuracy != null && accuracy < 3) ||
+    (gps_jitter != null && gps_jitter < 0.5)
 
   // Geofencing check: validate GPS location against office locations
   const { data: locations } = await admin
@@ -221,6 +252,10 @@ export async function POST(req: NextRequest) {
       status: 'hadir',
       face_verification_status: faceStatus,
       face_confidence: face_confidence ?? null,
+      check_in_lat: latitude ?? null,
+      check_in_lng: longitude ?? null,
+      check_in_accuracy: accuracy ?? null,
+      is_gps_suspected: gpsSuspected,
     })
 
     if (insertError) {

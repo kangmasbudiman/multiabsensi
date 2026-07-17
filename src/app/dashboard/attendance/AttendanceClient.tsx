@@ -25,6 +25,7 @@ type Row = {
     face_verification_status: string | null
     face_confidence: number | null
     method: string | null
+    is_gps_suspected: boolean | null
   } | null
   night_shift: { check_in_time: string; shift_name: string } | null
 }
@@ -298,7 +299,14 @@ export default function AttendanceClient({
                     </div>
                   </td>
                   <td className="px-4 py-3.5">
-                    <span className="text-xs text-gray-500">{row.attendance?.notes ?? '—'}</span>
+                    <div className="flex flex-col gap-1">
+                      {row.attendance?.is_gps_suspected && (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-orange-700 bg-orange-100 px-1.5 py-0.5 rounded-full w-fit" title="Akurasi/jitter GPS saat check-in mencurigakan. Mungkin fake GPS.">
+                          ⚠ GPS curiga
+                        </span>
+                      )}
+                      <span className="text-xs text-gray-500">{row.attendance?.notes ?? '—'}</span>
+                    </div>
                   </td>
                 </tr>
               ))}

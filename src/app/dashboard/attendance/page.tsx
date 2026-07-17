@@ -39,7 +39,7 @@ export default async function AttendancePage({
   const employeeIds = (employees ?? []).map(e => e.id)
   const { data: attendances, error: attError } = await admin
     .from('attendances')
-    .select('user_id, check_in_time, check_out_time, check_in_lat, check_in_lng, check_in_accuracy, status, is_lembur, notes, check_in_photo_url, check_out_photo_url, face_verification_status, face_confidence, method, photo_purged_at')
+    .select('user_id, check_in_time, check_out_time, check_in_lat, check_in_lng, check_in_accuracy, status, is_lembur, notes, check_in_photo_url, check_out_photo_url, face_verification_status, face_confidence, method, photo_purged_at, is_gps_suspected')
     .eq('date', selectedDate)
     .in('user_id', employeeIds.length > 0 ? employeeIds : ['__none__'])
 

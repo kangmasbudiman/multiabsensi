@@ -119,6 +119,9 @@ export default function AbsenClient({ appName = 'AbsenKu' }: { appName?: string 
   // Geofencing
   const [userLocation, setUserLocation] = useState<{ lat: number; lng: number } | null>(null)
   const [gpsAccuracy, setGpsAccuracy] = useState<number | null>(null)
+  const [gpsSamples, setGpsSamples] = useState<Array<{ lat: number; lng: number; accuracy: number }>>([])
+  const [gpsJitter, setGpsJitter] = useState<number | null>(null)
+  const [gpsMockDetected, setGpsMockDetected] = useState(false)
   const [officeLocations, setOfficeLocations] = useState<OfficeLocation[]>([])
   const [locationStatus, setLocationStatus] = useState<'unknown' | 'checking' | 'inside' | 'outside' | 'denied' | 'no_geofence'>('unknown')
   const [nearestOffice, setNearestOffice] = useState<{ name: string; distance: number } | null>(null)
@@ -242,28 +245,59 @@ export default function AbsenClient({ appName = 'AbsenKu' }: { appName?: string 
 
   // Location check — fresh GPS reading, compute distance, set status.
   // Strict: if GPS reading is too imprecise to fit inside radius, treat as outside.
+  // Anti-spoof: ambil 3 sample GPS, hitung jitter, cek flag mock provider (Android).
   const checkLocation = async (locations: OfficeLocation[]) => {
     setLocationStatus('checking')
     try {
-      const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
-        navigator.geolocation.getCurrentPosition(resolve, reject, {
-          enableHighAccuracy: true,
-          timeout: 15000,
-          maximumAge: 0,
+      const samples: Array<{ lat: number; lng: number; accuracy: number; mock: boolean }> = []
+      for (let i = 0; i < 3; i++) {
+        const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
+          navigator.geolocation.getCurrentPosition(resolve, reject, {
+            enableHighAccuracy: true,
+            timeout: 15000,
+            maximumAge: 0,
+          })
         })
-      })
-      const { latitude: lat, longitude: lng, accuracy } = pos.coords
-      setUserLocation({ lat, lng })
-      setGpsAccuracy(accuracy ? Math.round(accuracy) : null)
+        // Non-standard: Android Chrome mengisi isMockProvider=true kalau lokasi palsu.
+        const isMock = (pos as GeolocationPosition & { isMockProvider?: boolean }).isMockProvider === true
+        samples.push({
+          lat: pos.coords.latitude,
+          lng: pos.coords.longitude,
+          accuracy: pos.coords.accuracy ?? 0,
+          mock: isMock,
+        })
+        if (i < 2) await new Promise(r => setTimeout(r, 800))
+      }
+
+      const avgLat = samples.reduce((s, p) => s + p.lat, 0) / samples.length
+      const avgLng = samples.reduce((s, p) => s + p.lng, 0) / samples.length
+      const avgAcc = samples.reduce((s, p) => s + p.accuracy, 0) / samples.length
+      const anyMock = samples.some(s => s.mock)
+
+      // Jitter = max pairwise distance antar sample.
+      // Real GPS selalu ada drift kecil (1-10m); fake GPS biasanya return koordinat identik (jitter=0).
+      let maxJitter = 0
+      for (let i = 0; i < samples.length; i++) {
+        for (let j = i + 1; j < samples.length; j++) {
+          const d = getDistance(samples[i].lat, samples[i].lng, samples[j].lat, samples[j].lng)
+          if (d > maxJitter) maxJitter = d
+        }
+      }
+
+      setUserLocation({ lat: avgLat, lng: avgLng })
+      setGpsAccuracy(Math.round(avgAcc))
+      setGpsSamples(samples.map(({ lat, lng, accuracy }) => ({ lat, lng, accuracy })))
+      setGpsJitter(Math.round(maxJitter * 10) / 10)
+      setGpsMockDetected(anyMock)
 
       let insideAny = false
       let nearest: { name: string; distance: number } | null = null
 
       for (const loc of locations) {
-        const dist = getDistance(lat, lng, loc.latitude, loc.longitude)
+        const dist = getDistance(avgLat, avgLng, loc.latitude, loc.longitude)
         // Strict check: only count as inside if (distance - accuracy) <= radius.
         // If GPS error circle is bigger than remaining slack, can't trust the "inside" reading.
-        const slack = Math.max(0, dist - accuracy)
+        const slack = Math.max(0, dist - avgAcc)
         if (slack <= loc.radius_meters) insideAny = true
         if (!nearest || dist < nearest.distance) {
           nearest = { name: loc.name, distance: Math.round(dist) }
@@ -479,6 +513,10 @@ export default function AbsenClient({ appName = 'AbsenKu' }: { appName?: string 
           face_confidence: data.similarity,
           latitude: userLocation?.lat ?? null,
           longitude: userLocation?.lng ?? null,
+          accuracy: gpsAccuracy,
+          gps_samples: gpsSamples,
+          gps_jitter: gpsJitter,
+          gps_mock: gpsMockDetected,
           device_fingerprint: getDeviceFingerprint(),
         }),
       })
