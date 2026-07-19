@@ -321,7 +321,7 @@ export default function AbsenClient({ appName = 'AbsenKu' }: { appName?: string 
     setLoading(true)
     setError('')
     try {
-      const res = await fetch(`/api/public-employees?org_code=${encodeURIComponent(code)}`)
+      const res = await fetch(`/api/public-org?org_code=${encodeURIComponent(code)}`)
       const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Gagal')
       setOrgCode(code)
@@ -329,22 +329,19 @@ export default function AbsenClient({ appName = 'AbsenKu' }: { appName?: string 
       setFaceRegCount(data.face_registration_count ?? 0)
       try { localStorage.setItem('absenku_org_code', code) } catch {}
 
-      // Fetch office locations
-      const locRes = await fetch(`/api/public-locations?org_code=${encodeURIComponent(code)}`)
-      const locData = await locRes.json()
-      const locations: OfficeLocation[] = locData.locations ?? []
+      const locations: OfficeLocation[] = data.locations ?? []
       setOfficeLocations(locations)
 
-      // Check GPS
+      // Pindah step dulu, baru cek GPS di background — biar user nggak nunggu
+      // sinyal GPS cuma buat lihat daftar karyawan.
+      setStep('scan')
+
       if (locations.length > 0) {
-        await checkLocation(locations)
+        // Fire and forget — checkLocation set state sendiri saat selesai.
+        void checkLocation(locations)
       } else {
-        // Admin hasn't configured any office location — geofence cannot be enforced.
-        // Mark as 'no_geofence' so UI can warn the user (and admin) clearly.
         setLocationStatus('no_geofence')
       }
-
-      setStep('scan')
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Gagal')
     } finally {
