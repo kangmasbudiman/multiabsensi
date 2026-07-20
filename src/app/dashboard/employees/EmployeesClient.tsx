@@ -85,6 +85,9 @@ export default function EmployeesClient({ employees, departments, shifts, positi
   const [error, setError] = useState('')
   const [createdInfo, setCreatedInfo] = useState<{ name: string; username: string; email: string; password: string } | null>(null)
   const [copied, setCopied] = useState(false)
+  const [inviteModal, setInviteModal] = useState<{ qr_data_url: string; registration_url: string; expires_at: string } | null>(null)
+  const [inviteLoading, setInviteLoading] = useState(false)
+  const [inviteCopied, setInviteCopied] = useState(false)
   const [openDropdown, setOpenDropdown] = useState<string | null>(null)
   const [resetModal, setResetModal] = useState<{ emp: Employee; password: string } | null>(null)
   const [resetLoading, setResetLoading] = useState(false)
@@ -114,6 +117,35 @@ export default function EmployeesClient({ employees, departments, shifts, positi
     navigator.clipboard.writeText(text)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
+  }
+
+  const handleInvite = async () => {
+    setInviteLoading(true)
+    try {
+      const res = await fetch('/api/registration-tokens', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ org_id: orgId }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Gagal membuat undangan')
+      setInviteModal({
+        qr_data_url: data.qr_data_url,
+        registration_url: data.registration_url,
+        expires_at: data.expires_at,
+      })
+      router.refresh()
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Gagal membuat undangan')
+    } finally {
+      setInviteLoading(false)
+    }
+  }
+
+  const copyInviteLink = (url: string) => {
+    navigator.clipboard.writeText(url)
+    setInviteCopied(true)
+    setTimeout(() => setInviteCopied(false), 2000)
   }
 
   const [form, setForm] = useState({
@@ -467,10 +499,16 @@ export default function EmployeesClient({ employees, departments, shifts, positi
           <h1 className="text-2xl font-bold text-gray-800">Data Karyawan</h1>
           <p className="text-sm text-gray-400 mt-0.5">{activeCount} aktif dari {employees.length} karyawan</p>
         </div>
-        <button onClick={openAdd}
-          className="px-4 py-2.5 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-sm font-semibold transition-colors flex items-center gap-2">
-          + Tambah Karyawan
-        </button>
+        <div className="flex items-center gap-2">
+          <button onClick={handleInvite} disabled={inviteLoading}
+            className="px-4 py-2.5 border-2 border-teal-600 text-teal-700 hover:bg-teal-50 disabled:opacity-50 rounded-xl text-sm font-semibold transition-colors flex items-center gap-2">
+            {inviteLoading ? '⏳ Membuat...' : '+ Undang Karyawan'}
+          </button>
+          <button onClick={openAdd}
+            className="px-4 py-2.5 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-sm font-semibold transition-colors flex items-center gap-2">
+            + Tambah Karyawan
+          </button>
+        </div>
       </div>
 
       {/* Filter & Search */}
@@ -800,6 +838,72 @@ export default function EmployeesClient({ employees, departments, shifts, positi
               >
                 Tutup
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Undangan Pendaftaran Mandiri */}
+      {inviteModal && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+            <div className="p-5 border-b border-gray-100 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-teal-100 rounded-xl flex items-center justify-center text-xl">📨</div>
+                <div>
+                  <h2 className="font-bold text-gray-800">Link Pendaftaran Mandiri</h2>
+                  <p className="text-xs text-gray-400">
+                    Berlaku sampai {new Date(inviteModal.expires_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}
+                  </p>
+                </div>
+              </div>
+              <button onClick={() => setInviteModal(null)} className="text-gray-400 hover:text-gray-600 text-xl leading-none">×</button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              <div className="bg-amber-50 border border-amber-100 rounded-xl px-4 py-2.5 text-xs text-amber-700">
+                📌 Karyawan buka link ini → isi data diri sendiri → foto wajah → selesai. Token otomatis mati setelah berhasil dipakai.
+              </div>
+
+              <div className="flex justify-center">
+                <div className="bg-white p-3 rounded-2xl border-2 border-gray-100 shadow-sm">
+                  <img src={inviteModal.qr_data_url} alt="QR Pendaftaran" className="w-52 h-52" />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1.5">Link Pendaftaran</label>
+                <div className="flex gap-2">
+                  <input
+                    readOnly
+                    value={inviteModal.registration_url}
+                    className="flex-1 px-3 py-2 border border-gray-200 rounded-xl text-xs text-gray-600 bg-gray-50 font-mono"
+                  />
+                  <button
+                    onClick={() => copyInviteLink(inviteModal.registration_url)}
+                    className={`px-3 py-2 rounded-xl text-xs font-semibold transition-colors whitespace-nowrap ${inviteCopied ? 'bg-green-500 text-white' : 'bg-teal-600 hover:bg-teal-700 text-white'}`}
+                  >
+                    {inviteCopied ? '✓ Tersalin' : '📋 Salin'}
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-1">
+                <a
+                  href={inviteModal.registration_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex-1 py-2.5 border border-gray-200 text-gray-700 rounded-xl text-sm font-semibold hover:bg-gray-50 text-center"
+                >
+                  🔗 Buka Link
+                </a>
+                <button
+                  onClick={() => setInviteModal(null)}
+                  className="flex-1 py-2.5 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-sm font-semibold"
+                >
+                  Selesai
+                </button>
+              </div>
             </div>
           </div>
         </div>
