@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { Check, Camera, ArrowLeft, Building2, ScanFace, MapPin, MapPinOff } from 'lucide-react'
+import { Check, Camera, ArrowLeft, Building2, ScanFace, MapPin, MapPinOff, LogOut } from 'lucide-react'
 
 type OfficeLocation = { name: string; latitude: number; longitude: number; radius_meters: number }
 type Org = { id: string; name: string; address?: string | null }
@@ -157,6 +157,21 @@ export default function AbsenClient({ appName = 'AbsenKu' }: { appName?: string 
 
   // Result
   const [result, setResult] = useState<{ type: 'checkin' | 'checkout'; time: string } | null>(null)
+
+  // Checkout confirmation — populated when user has already checked in today.
+  // Holds the captured photo + identity so we can resume submit without re-detecting.
+  const [pendingCheckout, setPendingCheckout] = useState<{
+    base64: string
+    employeeData: {
+      user_id: string
+      full_name: string
+      employee_id: string | null
+      position: string | null
+      similarity: number
+    }
+    checkInTime: string
+  } | null>(null)
+  const [submitting, setSubmitting] = useState(false)
 
   // Recent attendance
   const [recentAttendance, setRecentAttendance] = useState<Array<{
@@ -475,7 +490,57 @@ export default function AbsenClient({ appName = 'AbsenKu' }: { appName?: string 
     setFaceBox(null)
   }, [])
 
-  // --- Handle identification → auto-submit ---
+  // --- Submit attendance (POST) — dipakai baik untuk check-in langsung maupun check-out setelah konfirmasi ---
+  const submitAttendance = async (
+    base64: string,
+    employeeData: {
+      user_id: string; full_name: string; employee_id: string | null
+      position: string | null; similarity: number
+    }
+  ) => {
+    setSubmitting(true)
+    setScanStatus(`Menyimpan absensi ${employeeData.full_name}...`)
+    try {
+      const res = await fetch('/api/public-attendance', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: employeeData.user_id,
+          org_code: orgCode.trim(),
+          photo_base64: base64,
+          face_verified: true,
+          face_confidence: employeeData.similarity,
+          latitude: userLocation?.lat ?? null,
+          longitude: userLocation?.lng ?? null,
+          accuracy: gpsAccuracy,
+          gps_samples: gpsSamples,
+          gps_jitter: gpsJitter,
+          gps_mock: gpsMockDetected,
+          device_fingerprint: getDeviceFingerprint(),
+        }),
+      })
+      const result = await res.json()
+      if (!res.ok) throw new Error(result.error || 'Gagal')
+
+      setIdentifiedEmployee({
+        user_id: employeeData.user_id,
+        full_name: employeeData.full_name,
+        employee_id: employeeData.employee_id,
+        position: employeeData.position,
+        similarity: employeeData.similarity,
+        photoUrl: null,
+      })
+      setResult({ type: result.type, time: result.time })
+      setStep('result')
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Gagal menyimpan absensi')
+      setStep('scan')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  // --- Handle identification → cek status dulu, minta konfirmasi kalau checkout ---
   const handleIdentification = async (data: {
     user_id: string; full_name: string; employee_id: string | null
     position: string | null; similarity: number
@@ -496,43 +561,29 @@ export default function AbsenClient({ appName = 'AbsenKu' }: { appName?: string 
     const photoDataUrl = exportCanvas.toDataURL('image/jpeg', 0.6)
     const base64 = photoDataUrl.split(',')[1]
 
-    setScanStatus(`Wajah dikenali: ${data.full_name}. Menyimpan...`)
+    setScanStatus(`Wajah dikenali: ${data.full_name}. Memeriksa status...`)
 
     try {
-      const res = await fetch('/api/public-attendance', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          user_id: data.user_id,
-          org_code: orgCode.trim(),
-          photo_base64: base64,
-          face_verified: true,
-          face_confidence: data.similarity,
-          latitude: userLocation?.lat ?? null,
-          longitude: userLocation?.lng ?? null,
-          accuracy: gpsAccuracy,
-          gps_samples: gpsSamples,
-          gps_jitter: gpsJitter,
-          gps_mock: gpsMockDetected,
-          device_fingerprint: getDeviceFingerprint(),
-        }),
-      })
-      const result = await res.json()
-      if (!res.ok) throw new Error(result.error || 'Gagal')
+      const statusRes = await fetch(`/api/public-attendance?user_id=${data.user_id}`)
+      if (!statusRes.ok) throw new Error('Gagal memeriksa status absensi')
+      const status = await statusRes.json()
 
-      setIdentifiedEmployee({
-        user_id: data.user_id,
-        full_name: data.full_name,
-        employee_id: data.employee_id,
-        position: data.position,
-        similarity: data.similarity,
-        photoUrl: null,
-      })
-      setResult({ type: result.type, time: result.time })
-      setStep('result')
+      // Sudah check-in tapi belum check-out → jangan auto-checkout, minta konfirmasi dulu
+      // (mencegah user ngalami check-out tak sengaja karena lewat kamera 2x)
+      if (status.has_checked_in && !status.has_checked_out) {
+        setPendingCheckout({
+          base64,
+          employeeData: data,
+          checkInTime: status.check_in_time,
+        })
+        setStep('confirm')
+        return
+      }
+
+      // Belum check-in → langsung submit (tetap cepat, 1 detik)
+      await submitAttendance(base64, data)
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Gagal menyimpan absensi')
-      // Return to scan on error
+      setError(e instanceof Error ? e.message : 'Gagal memeriksa status absensi')
       setStep('scan')
     }
   }
@@ -544,6 +595,8 @@ export default function AbsenClient({ appName = 'AbsenKu' }: { appName?: string 
     setCapturedPhoto(null)
     setResult(null)
     setTodayStatus(null)
+    setPendingCheckout(null)
+    setSubmitting(false)
     setError('')
     setScanStatus('')
     setFaceBox(null)
@@ -977,12 +1030,70 @@ export default function AbsenClient({ appName = 'AbsenKu' }: { appName?: string 
                 setIdentifiedEmployee(null)
                 setCapturedPhoto(null)
                 setTodayStatus(null)
+                setPendingCheckout(null)
                 setFaceBox(null)
                 setScanning(false)
                 setScanStatus('Mendeteksi wajah...')
                 setStep('scan')
               }}
             />
+          )}
+
+          {/* Step: Confirm checkout — mencegah check-out tak sengaja */}
+          {step === 'confirm' && pendingCheckout && (
+            <div className="bg-white rounded-2xl shadow-2xl overflow-hidden">
+              <div className="p-6 text-center">
+                <div className="w-16 h-16 bg-amber-50 rounded-2xl flex items-center justify-center mx-auto mb-5">
+                  <LogOut className="w-8 h-8 text-amber-600" />
+                </div>
+                <h2 className="text-lg font-bold text-gray-900 mb-1">Konfirmasi Check-out</h2>
+                <p className="text-sm font-semibold text-gray-700 mb-4">
+                  {pendingCheckout.employeeData.full_name}
+                </p>
+                <div className="bg-teal-50 rounded-xl px-4 py-3 mb-5">
+                  <p className="text-xs text-teal-700 mb-1">Anda sudah check-in hari ini:</p>
+                  <p className="text-2xl font-bold text-teal-600">
+                    {new Date(pendingCheckout.checkInTime).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' })} WIB
+                  </p>
+                </div>
+                <p className="text-sm text-gray-500 mb-6">
+                  Lanjutkan check-out sekarang?
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    onClick={() => {
+                      setPendingCheckout(null)
+                      setStep('scan')
+                    }}
+                    disabled={submitting}
+                    className="py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-xl font-semibold disabled:opacity-50 transition-colors"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    onClick={() => {
+                      const { base64, employeeData } = pendingCheckout
+                      setPendingCheckout(null)
+                      void submitAttendance(base64, employeeData)
+                    }}
+                    disabled={submitting}
+                    className="py-3 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-semibold disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
+                  >
+                    {submitting ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        Memproses...
+                      </>
+                    ) : (
+                      'Ya, Check-out'
+                    )}
+                  </button>
+                </div>
+                <p className="text-xs text-gray-400 mt-4">
+                  Pembatalan akan kembali ke pemindai wajah
+                </p>
+              </div>
+            </div>
           )}
         </div>
       </main>
