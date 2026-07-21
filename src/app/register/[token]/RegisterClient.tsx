@@ -40,6 +40,7 @@ export default function RegisterClient({ token, valid, reason, orgName, departme
 
   // Success state
   const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
 
   useEffect(() => {
     return () => {
@@ -123,6 +124,7 @@ export default function RegisterClient({ token, valid, reason, orgName, departme
       if (!res.ok) throw new Error(data.error || 'Gagal mendaftarkan')
 
       setUsername(data.username || '')
+      setPassword(data.password || '')
       setStep('success')
 
       if (streamRef.current) {
@@ -406,15 +408,20 @@ export default function RegisterClient({ token, valid, reason, orgName, departme
               Buka aplikasi absensi, masukkan kode perusahaan, lalu hadapkan wajah ke kamera.
             </p>
           </div>
-          {username && (
-            <div className="bg-gray-50 rounded-xl p-4 space-y-2 text-sm">
-              <div className="flex justify-between">
-                <span className="text-gray-500">Username (untuk mobile app)</span>
-                <span className="font-mono font-semibold text-gray-800">{username}</span>
+          {(username || password) && (
+            <div className="bg-gray-50 rounded-xl p-4 space-y-3 text-sm">
+              <div className="flex justify-between items-center gap-3">
+                <span className="text-gray-500 shrink-0">Username</span>
+                <span className="font-mono font-semibold text-gray-800 truncate">{username}</span>
               </div>
-              <p className="text-xs text-gray-400 pt-1 border-t border-gray-200">
-                Simpan info ini jika nanti butuh login ke aplikasi mobile.
-              </p>
+              <div className="flex justify-between items-center gap-3 pt-2 border-t border-gray-200">
+                <span className="text-gray-500 shrink-0">Password</span>
+                <span className="font-mono font-semibold text-gray-800 truncate">{password}</span>
+              </div>
+              <div className="bg-amber-50 border border-amber-100 rounded-lg px-3 py-2 text-xs text-amber-700 flex items-start gap-2">
+                <span className="shrink-0">⚠️</span>
+                <span>Catat username & password ini untuk login ke aplikasi mobile. Password tidak bisa dilihat lagi setelah halaman ini ditutup.</span>
+              </div>
             </div>
           )}
           <button
