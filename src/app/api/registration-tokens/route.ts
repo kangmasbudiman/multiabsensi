@@ -8,7 +8,9 @@ import QRCode from 'qrcode'
 export const dynamic = 'force-dynamic'
 
 // POST /api/registration-tokens
-// Admin membuat undangan pendaftaran mandiri (placeholder user + token + QR)
+// Admin: get-or-create link pendaftaran umum per-org.
+// - Kalau org sudah punya link aktif → return existing
+// - Kalau belum → buat baru (tanpa expiry)
 export async function POST(req: NextRequest) {
   const clientIp = getClientIp(req)
   if (isRateLimited(`reg-token:${clientIp}`, 20, 60_000)) {
@@ -38,79 +40,80 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json().catch(() => ({}))
   const orgId = body.org_id ?? adminProfile.org_id
+  const forceRotate = body.rotate === true
 
   if (!orgId) {
     return NextResponse.json({ error: 'org_id diperlukan' }, { status: 400 })
   }
 
-  // Ambil company_code untuk email synthetic
   const { data: orgRow } = await admin
     .from('organizations')
-    .select('company_code, base_url')
+    .select('company_code, base_url, name, app_name')
     .eq('id', orgId)
     .single()
 
-  if (!orgRow?.company_code) {
-    return NextResponse.json({ error: 'Organisasi tidak valid' }, { status: 404 })
+  if (!orgRow) {
+    return NextResponse.json({ error: 'Organisasi tidak ditemukan' }, { status: 404 })
   }
 
-  // Generate username & password placeholder
-  const rand = Math.random().toString(36).slice(2, 10)
-  const placeholderUsername = `usr_${rand}`
-  const placeholderPassword = Array.from({ length: 10 }, () => {
-    const chars = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789'
-    return chars[Math.floor(Math.random() * chars.length)]
-  }).join('')
+  // Cek link aktif yang sudah ada (kecuali force rotate)
+  if (!forceRotate) {
+    const { data: existing } = await admin
+      .from('org_registration_links')
+      .select('token, is_active, expires_at, created_at, last_used_at, use_count')
+      .eq('org_id', orgId)
+      .eq('is_active', true)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
 
-  const email = `${placeholderUsername}_${orgRow.company_code}@absenku.app`.toLowerCase()
-
-  // Buat akun via edge function (pola: lihat EmployeesClient.handleSave)
-  const { data: created, error: createError } = await supabase.functions.invoke('create-employee', {
-    body: {
-      org_id: orgId,
-      email,
-      password: placeholderPassword,
-      full_name: 'Pendaftar Baru',
-      username: placeholderUsername,
-      employee_id: null,
-      department_id: null,
-    },
-  })
-
-  if (createError || !created?.user_id) {
-    console.error('[registration-tokens] create-employee error:', createError, created)
-    return NextResponse.json(
-      { error: 'Gagal membuat akun placeholder', detail: created?.error ?? createError?.message },
-      { status: 500 }
-    )
+    if (existing) {
+      // Cek expired
+      const isExpired = existing.expires_at && new Date(existing.expires_at) <= new Date()
+      if (!isExpired) {
+        return NextResponse.json(await buildResponse(admin, existing.token, orgRow, existing.use_count ?? 0, existing.last_used_at, existing.expires_at))
+      }
+    }
   }
 
-  const newUserId = created.user_id as string
+  // Buat link baru
+  if (forceRotate) {
+    await admin
+      .from('org_registration_links')
+      .update({ is_active: false })
+      .eq('org_id', orgId)
+      .eq('is_active', true)
+  }
 
-  // Set is_active = false sampai karyawan menyelesaikan registrasi
-  await admin.from('profiles').update({ is_active: false }).eq('id', newUserId)
-
-  // Buat token
   const token = randomUUID()
-  const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 hari
 
-  const { error: tokenError } = await admin
-    .from('employee_registration_tokens')
+  const { error: insertError } = await admin
+    .from('org_registration_links')
     .insert({
       token,
-      user_id: newUserId,
       org_id: orgId,
       created_by: adminProfile.id,
-      expires_at: expiresAt.toISOString(),
+      is_active: true,
+      expires_at: null,
     })
 
-  if (tokenError) {
-    console.error('[registration-tokens] token insert error:', tokenError)
-    return NextResponse.json({ error: 'Gagal membuat token' }, { status: 500 })
+  if (insertError) {
+    console.error('[registration-tokens] insert error:', insertError)
+    return NextResponse.json({ error: 'Gagal membuat link' }, { status: 500 })
   }
 
-  // Build URL + QR
-  const orgBaseUrl = orgRow.base_url?.trim().replace(/\/+$/, '')
+  return NextResponse.json(await buildResponse(admin, token, orgRow, 0, null, null))
+}
+
+async function buildResponse(
+  admin: ReturnType<typeof createAdminClient>,
+  token: string,
+  org: { company_code: string; base_url: string | null; name: string; app_name: string | null },
+  useCount: number,
+  lastUsedAt: string | null,
+  expiresAt: string | null
+) {
+  const orgBaseUrl = org.base_url?.trim().replace(/\/+$/, '')
   const baseUrl =
     orgBaseUrl ??
     process.env.NEXT_PUBLIC_BASE_URL ??
@@ -124,13 +127,14 @@ export async function POST(req: NextRequest) {
     color: { dark: '#0f172a', light: '#ffffff' },
   })
 
-  return NextResponse.json({
+  return {
     success: true,
     token,
     qr_data_url: qrDataUrl,
     registration_url: registrationUrl,
-    expires_at: expiresAt.toISOString(),
-    placeholder_username: placeholderUsername,
-    placeholder_password: placeholderPassword,
-  })
+    expires_at: expiresAt,
+    use_count: useCount,
+    last_used_at: lastUsedAt,
+    org_name: org.app_name || org.name,
+  }
 }

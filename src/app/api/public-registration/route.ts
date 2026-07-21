@@ -1,26 +1,27 @@
 import { createAdminClient } from '@/lib/supabase/admin'
+import { createClient } from '@/lib/supabase/server'
 import { encryptDescriptor } from '@/lib/face-crypto'
 import { isRateLimited, getClientIp } from '@/lib/rate-limit'
 import { NextRequest, NextResponse } from 'next/server'
 
 export const dynamic = 'force-dynamic'
 
-interface TokenRow {
+interface LinkRow {
   id: string
   token: string
-  user_id: string
   org_id: string
-  expires_at: string
-  used_at: string | null
+  is_active: boolean
+  expires_at: string | null
 }
 
-async function fetchValidToken(admin: ReturnType<typeof createAdminClient>, token: string) {
+async function fetchValidLink(token: string): Promise<LinkRow | null> {
+  const admin = createAdminClient()
   const { data } = await admin
-    .from('employee_registration_tokens')
-    .select('id, token, user_id, org_id, expires_at, used_at')
+    .from('org_registration_links')
+    .select('id, token, org_id, is_active, expires_at')
     .eq('token', token)
     .single()
-  return data as TokenRow | null
+  return data as LinkRow | null
 }
 
 // GET /api/public-registration?token=xxx
@@ -30,23 +31,23 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Token diperlukan' }, { status: 400 })
   }
 
-  const admin = createAdminClient()
-  const tokenRow = await fetchValidToken(admin, token)
+  const link = await fetchValidLink(token)
 
-  if (!tokenRow) {
+  if (!link) {
     return NextResponse.json({ valid: false, reason: 'not_found' }, { status: 404 })
   }
-  if (tokenRow.used_at) {
-    return NextResponse.json({ valid: false, reason: 'used' }, { status: 410 })
+  if (!link.is_active) {
+    return NextResponse.json({ valid: false, reason: 'revoked' }, { status: 410 })
   }
-  if (new Date(tokenRow.expires_at) <= new Date()) {
+  if (link.expires_at && new Date(link.expires_at) <= new Date()) {
     return NextResponse.json({ valid: false, reason: 'expired' }, { status: 410 })
   }
 
+  const admin = createAdminClient()
   const [orgRes, deptRes, posRes] = await Promise.all([
-    admin.from('organizations').select('name, app_name').eq('id', tokenRow.org_id).single(),
-    admin.from('departments').select('id, name').eq('org_id', tokenRow.org_id).order('name'),
-    admin.from('positions').select('name, label').eq('org_id', tokenRow.org_id).eq('is_active', true).order('level', { ascending: false }),
+    admin.from('organizations').select('name, app_name').eq('id', link.org_id).single(),
+    admin.from('departments').select('id, name').eq('org_id', link.org_id).order('name'),
+    admin.from('positions').select('name, label').eq('org_id', link.org_id).eq('is_active', true).order('level', { ascending: false }),
   ])
 
   return NextResponse.json({
@@ -60,7 +61,6 @@ export async function GET(req: NextRequest) {
       { name: 'keperawatan', label: 'Bagian Keperawatan' },
       { name: 'medis', label: 'Bagian Medis' },
     ],
-    expires_at: tokenRow.expires_at,
   })
 }
 
@@ -104,26 +104,76 @@ export async function POST(req: NextRequest) {
   }
 
   if (!Array.isArray(descriptor) || descriptor.length !== 128) {
-    return NextResponse.json(
-      { error: 'Descriptor wajah tidak valid' },
-      { status: 400 }
-    )
+    return NextResponse.json({ error: 'Descriptor wajah tidak valid' }, { status: 400 })
+  }
+
+  const link = await fetchValidLink(token)
+
+  if (!link) {
+    return NextResponse.json({ error: 'Link tidak ditemukan' }, { status: 404 })
+  }
+  if (!link.is_active) {
+    return NextResponse.json({ error: 'Link sudah dinonaktifkan' }, { status: 410 })
+  }
+  if (link.expires_at && new Date(link.expires_at) <= new Date()) {
+    return NextResponse.json({ error: 'Link kedaluwarsa' }, { status: 410 })
   }
 
   const admin = createAdminClient()
-  const tokenRow = await fetchValidToken(admin, token)
 
-  if (!tokenRow) {
-    return NextResponse.json({ error: 'Token tidak ditemukan' }, { status: 404 })
-  }
-  if (tokenRow.used_at) {
-    return NextResponse.json({ error: 'Token sudah dipakai' }, { status: 410 })
-  }
-  if (new Date(tokenRow.expires_at) <= new Date()) {
-    return NextResponse.json({ error: 'Token kedaluwarsa' }, { status: 410 })
+  // Ambil company_code untuk email synthetic
+  const { data: orgRow } = await admin
+    .from('organizations')
+    .select('company_code')
+    .eq('id', link.org_id)
+    .single()
+
+  if (!orgRow?.company_code) {
+    return NextResponse.json({ error: 'Organisasi tidak valid' }, { status: 500 })
   }
 
-  const userId = tokenRow.user_id
+  // Generate username & password unik per submit
+  const rand = Math.random().toString(36).slice(2, 10)
+  const placeholderUsername = `usr_${rand}`
+  const placeholderPassword = Array.from({ length: 10 }, () => {
+    const chars = 'ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789'
+    return chars[Math.floor(Math.random() * chars.length)]
+  }).join('')
+
+  const email = `${placeholderUsername}_${orgRow.company_code}@absenku.app`.toLowerCase()
+
+  // Buat akun baru via edge function (pakai anon session supaya behavior sama)
+  const supabase = await createClient()
+  const { data: created, error: createError } = await supabase.functions.invoke('create-employee', {
+    body: {
+      org_id: link.org_id,
+      email,
+      password: placeholderPassword,
+      full_name,
+      username: placeholderUsername,
+      employee_id: employee_id || null,
+      department_id: department_id || null,
+    },
+  })
+
+  if (createError || !created?.user_id) {
+    console.error('[public-registration] create-employee error:', createError, created)
+    return NextResponse.json(
+      { error: 'Gagal membuat akun', detail: created?.error ?? createError?.message },
+      { status: 500 }
+    )
+  }
+
+  const userId = created.user_id as string
+
+  // Update field tambahan yang edge function mungkin tidak handle
+  const updateFields: Record<string, unknown> = { is_active: true }
+  if (division) updateFields.division = division
+  if (position) updateFields.position = position
+  if (phone) updateFields.phone = phone
+  if (Object.keys(updateFields).length > 0) {
+    await admin.from('profiles').update(updateFields).eq('id', userId)
+  }
 
   // Upload foto ke storage
   const photoBytes = Buffer.from(photo_base64, 'base64')
@@ -149,28 +199,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Gagal enkripsi data wajah' }, { status: 500 })
   }
 
-  // Update profile
-  const { data: profile, error: profileErr } = await admin
-    .from('profiles')
-    .update({
-      full_name,
-      employee_id: employee_id || null,
-      department_id: department_id || null,
-      division: division || null,
-      position: position || null,
-      phone: phone || null,
-      is_active: true,
-      updated_at: new Date().toISOString(),
-    })
-    .eq('id', userId)
-    .select('username')
-    .single()
-
-  if (profileErr) {
-    console.error('[public-registration] profile update error:', profileErr)
-    return NextResponse.json({ error: 'Gagal menyimpan data karyawan' }, { status: 500 })
-  }
-
   // Upsert face registration
   const upsertData: Record<string, unknown> = {
     user_id: userId,
@@ -191,14 +219,26 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Gagal menyimpan data wajah' }, { status: 500 })
   }
 
-  // Revoke token
+  // Increment use_count + update last_used_at
   await admin
-    .from('employee_registration_tokens')
-    .update({ used_at: new Date().toISOString() })
-    .eq('id', tokenRow.id)
+    .from('org_registration_links')
+    .update({
+      use_count: (await getUseCount(admin, link.id)) + 1,
+      last_used_at: new Date().toISOString(),
+    })
+    .eq('id', link.id)
 
   return NextResponse.json({
     success: true,
-    username: profile.username,
+    username: placeholderUsername,
   })
+}
+
+async function getUseCount(admin: ReturnType<typeof createAdminClient>, linkId: string): Promise<number> {
+  const { data } = await admin
+    .from('org_registration_links')
+    .select('use_count')
+    .eq('id', linkId)
+    .single()
+  return data?.use_count ?? 0
 }

@@ -5,7 +5,7 @@ import { useState, useRef, useEffect } from 'react'
 interface Props {
   token: string
   valid: boolean
-  reason: 'not_found' | 'used' | 'expired' | null
+  reason: 'not_found' | 'revoked' | 'expired' | null
   orgName: string
   departments: { id: string; name: string }[]
   positions: { name: string; label: string }[]
@@ -142,8 +142,8 @@ export default function RegisterClient({ token, valid, reason, orgName, departme
   if (!valid) {
     const messages: Record<string, { title: string; desc: string }> = {
       not_found: { title: 'Link Tidak Valid', desc: 'Link pendaftaran tidak ditemukan. Periksa kembali link yang Anda terima.' },
-      used: { title: 'Link Sudah Dipakai', desc: 'Link pendaftaran ini sudah pernah digunakan. Hubungi admin untuk link baru jika diperlukan.' },
-      expired: { title: 'Link Kedaluwarsa', desc: 'Masa berlaku link ini (7 hari) sudah habis. Hubungi admin untuk mendapatkan link baru.' },
+      revoked: { title: 'Link Dinonaktifkan', desc: 'Link pendaftaran ini sudah dinonaktifkan oleh admin. Hubungi admin untuk link baru.' },
+      expired: { title: 'Link Kedaluwarsa', desc: 'Masa berlaku link ini sudah habis. Hubungi admin untuk mendapatkan link baru.' },
     }
     const msg = reason ? messages[reason] : messages.not_found
 
@@ -189,7 +189,11 @@ export default function RegisterClient({ token, valid, reason, orgName, departme
               </div>
             </div>
             <div className="bg-amber-50 border border-amber-100 rounded-xl px-4 py-3 text-xs text-amber-700">
-              ⏰ Link berlaku sampai <span className="font-semibold">{expiresAt ? new Date(expiresAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) : '-'}</span>
+              {expiresAt ? (
+                <>⏰ Link berlaku sampai <span className="font-semibold">{new Date(expiresAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}</span></>
+              ) : (
+                <>✨ Link aktif tanpa batas waktu — bisa dipakai banyak karyawan</>
+              )}
             </div>
             <button
               onClick={() => setStep('form')}

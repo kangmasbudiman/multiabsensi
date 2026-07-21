@@ -85,9 +85,10 @@ export default function EmployeesClient({ employees, departments, shifts, positi
   const [error, setError] = useState('')
   const [createdInfo, setCreatedInfo] = useState<{ name: string; username: string; email: string; password: string } | null>(null)
   const [copied, setCopied] = useState(false)
-  const [inviteModal, setInviteModal] = useState<{ qr_data_url: string; registration_url: string; expires_at: string } | null>(null)
+  const [inviteModal, setInviteModal] = useState<{ qr_data_url: string; registration_url: string; expires_at: string | null; use_count: number; last_used_at: string | null; org_name?: string } | null>(null)
   const [inviteLoading, setInviteLoading] = useState(false)
   const [inviteCopied, setInviteCopied] = useState(false)
+  const [rotateLoading, setRotateLoading] = useState(false)
   const [openDropdown, setOpenDropdown] = useState<string | null>(null)
   const [resetModal, setResetModal] = useState<{ emp: Employee; password: string } | null>(null)
   const [resetLoading, setResetLoading] = useState(false)
@@ -128,17 +129,45 @@ export default function EmployeesClient({ employees, departments, shifts, positi
         body: JSON.stringify({ org_id: orgId }),
       })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Gagal membuat undangan')
+      if (!res.ok) throw new Error(data.error || 'Gagal mengambil link')
       setInviteModal({
         qr_data_url: data.qr_data_url,
         registration_url: data.registration_url,
         expires_at: data.expires_at,
+        use_count: data.use_count ?? 0,
+        last_used_at: data.last_used_at,
+        org_name: data.org_name,
       })
-      router.refresh()
     } catch (e) {
-      alert(e instanceof Error ? e.message : 'Gagal membuat undangan')
+      alert(e instanceof Error ? e.message : 'Gagal mengambil link')
     } finally {
       setInviteLoading(false)
+    }
+  }
+
+  const handleRotate = async () => {
+    if (!confirm('Generate link baru? Link lama akan langsung dinonaktifkan dan tidak bisa dipakai lagi.')) return
+    setRotateLoading(true)
+    try {
+      const res = await fetch('/api/registration-tokens', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ org_id: orgId, rotate: true }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Gagal generate link baru')
+      setInviteModal({
+        qr_data_url: data.qr_data_url,
+        registration_url: data.registration_url,
+        expires_at: data.expires_at,
+        use_count: data.use_count ?? 0,
+        last_used_at: data.last_used_at,
+        org_name: data.org_name,
+      })
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Gagal generate link baru')
+    } finally {
+      setRotateLoading(false)
     }
   }
 
@@ -501,8 +530,9 @@ export default function EmployeesClient({ employees, departments, shifts, positi
         </div>
         <div className="flex items-center gap-2">
           <button onClick={handleInvite} disabled={inviteLoading}
-            className="px-4 py-2.5 border-2 border-teal-600 text-teal-700 hover:bg-teal-50 disabled:opacity-50 rounded-xl text-sm font-semibold transition-colors flex items-center gap-2">
-            {inviteLoading ? '⏳ Membuat...' : '+ Undang Karyawan'}
+            className="px-4 py-2.5 border-2 border-teal-600 text-teal-700 hover:bg-teal-50 disabled:opacity-50 rounded-xl text-sm font-semibold transition-colors flex items-center gap-2"
+            title="Bagikan link pendaftaran mandiri ke banyak karyawan sekaligus">
+            {inviteLoading ? '⏳ Memuat...' : '🔗 Link Pendaftaran'}
           </button>
           <button onClick={openAdd}
             className="px-4 py-2.5 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-sm font-semibold transition-colors flex items-center gap-2">
@@ -849,11 +879,13 @@ export default function EmployeesClient({ employees, departments, shifts, positi
           <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
             <div className="p-5 border-b border-gray-100 flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-teal-100 rounded-xl flex items-center justify-center text-xl">📨</div>
+                <div className="w-10 h-10 bg-teal-100 rounded-xl flex items-center justify-center text-xl">🔗</div>
                 <div>
-                  <h2 className="font-bold text-gray-800">Link Pendaftaran Mandiri</h2>
+                  <h2 className="font-bold text-gray-800">Link Pendaftaran Umum</h2>
                   <p className="text-xs text-gray-400">
-                    Berlaku sampai {new Date(inviteModal.expires_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}
+                    {inviteModal.expires_at
+                      ? `Berlaku sampai ${new Date(inviteModal.expires_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}`
+                      : 'Aktif tanpa batas waktu — 1 link untuk semua karyawan'}
                   </p>
                 </div>
               </div>
@@ -861,8 +893,29 @@ export default function EmployeesClient({ employees, departments, shifts, positi
             </div>
 
             <div className="p-5 space-y-4">
-              <div className="bg-amber-50 border border-amber-100 rounded-xl px-4 py-2.5 text-xs text-amber-700">
-                📌 Karyawan buka link ini → isi data diri sendiri → foto wajah → selesai. Token otomatis mati setelah berhasil dipakai.
+              <div className="bg-teal-50 border border-teal-100 rounded-xl px-4 py-2.5 text-xs text-teal-700">
+                ✨ Bagikan link/QR ini ke karyawan manapun. Setiap orang yang buka akan mengisi data dirinya sendiri + daftar wajah.
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-gray-50 rounded-xl px-4 py-3 text-center">
+                  <p className="text-xs text-gray-500">Sudah terdaftar</p>
+                  <p className="text-2xl font-bold text-teal-700 mt-0.5">{inviteModal.use_count}</p>
+                  <p className="text-xs text-gray-400">karyawan</p>
+                </div>
+                <div className="bg-gray-50 rounded-xl px-4 py-3 text-center">
+                  <p className="text-xs text-gray-500">Terakhir dipakai</p>
+                  <p className="text-sm font-semibold text-gray-700 mt-1.5">
+                    {inviteModal.last_used_at
+                      ? new Date(inviteModal.last_used_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })
+                      : '—'}
+                  </p>
+                  <p className="text-xs text-gray-400">
+                    {inviteModal.last_used_at
+                      ? new Date(inviteModal.last_used_at).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })
+                      : 'belum pernah'}
+                  </p>
+                </div>
               </div>
 
               <div className="flex justify-center">
@@ -895,8 +948,16 @@ export default function EmployeesClient({ employees, departments, shifts, positi
                   rel="noopener noreferrer"
                   className="flex-1 py-2.5 border border-gray-200 text-gray-700 rounded-xl text-sm font-semibold hover:bg-gray-50 text-center"
                 >
-                  🔗 Buka Link
+                  🔗 Buka
                 </a>
+                <button
+                  onClick={handleRotate}
+                  disabled={rotateLoading}
+                  className="flex-1 py-2.5 border border-amber-300 text-amber-700 hover:bg-amber-50 disabled:opacity-50 rounded-xl text-sm font-semibold text-center"
+                  title="Nonaktifkan link lama + buat link baru"
+                >
+                  {rotateLoading ? '⏳...' : '🔄 Generate Baru'}
+                </button>
                 <button
                   onClick={() => setInviteModal(null)}
                   className="flex-1 py-2.5 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-sm font-semibold"
