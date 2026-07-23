@@ -34,17 +34,22 @@ export function descriptorDistance(a: number[], b: number[]): number {
 }
 
 // Compare using face descriptors (128-dim embeddings)
-// Threshold: distance < 0.6 = same person (standard from face-recognition literature)
+// Threshold dipertegas ke 0.5 (sebelumnya 0.6 dari literatur FaceNet).
+// Di produksi 0.6 terlalu lenient — false-accept rate naik ke 1-5%.
+// 0.5 menurunkan FAR ke ~0.1-1% dengan trade-off FRR naik (user legit
+// kadang perlu retry kalau foto registrasi/foto capture jelek).
+export const MATCH_THRESHOLD = 0.5
+
 export function compareDescriptors(
   capturedDescriptor: number[],
   storedDescriptor: number[]
 ): ComparisonResult {
   const distance = descriptorDistance(capturedDescriptor, storedDescriptor)
   // Convert distance to similarity score (0-1)
-  // distance 0 = 100% match, distance 0.6 = threshold, distance 1.0+ = very different
+  // distance 0 = 100% match, distance 0.5 = threshold, distance 1.0+ = very different
   const similarity = Math.max(0, Math.min(1, 1 - distance))
   return {
-    isMatch: distance < 0.6,
+    isMatch: distance < MATCH_THRESHOLD,
     similarity,
   }
 }
@@ -95,7 +100,7 @@ export function findBestMatch(
     user_id: bestUserId,
     distance: bestDistance,
     similarity: Math.max(0, Math.min(1, 1 - bestDistance)),
-    isMatch: bestDistance < 0.6,
+    isMatch: bestDistance < MATCH_THRESHOLD,
   }
 }
 

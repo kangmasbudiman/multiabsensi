@@ -188,6 +188,58 @@ export async function POST(req: NextRequest) {
   const now = new Date()
   const today = now.toLocaleDateString('sv-SE', { timeZone: 'Asia/Jakarta' })
 
+  // === Lookup shift aktif user untuk hari ini ===
+  // Prioritas: shift_schedules (roster per-tanggal) > employee_shifts (recurring default)
+  // Diperlukan agar DB trigger calculate_attendance_status jalan → status hadir/terlambat
+  // tercalc otomatis + cross-midnight detection jalan untuk shift malam.
+  const jsDow = new Date().toLocaleDateString('en-US', { weekday: 'short', timeZone: 'Asia/Jakarta' })
+  const dowMap: Record<string, number> = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 7 }
+  const todayDow = dowMap[jsDow] ?? 1
+
+  let shiftId: string | null = null
+  let todayIsOff = false
+
+  // 1. Cek roster untuk hari ini (override paling spesifik)
+  const { data: roster } = await admin
+    .from('shift_schedules')
+    .select('shift_id, is_off')
+    .eq('user_id', user_id)
+    .eq('date', today)
+    .maybeSingle()
+
+  if (roster) {
+    if (roster.is_off) {
+      todayIsOff = true
+      // Jangan return di sini — user mungkin masih perlu checkout shift malam lintas hari.
+      // is_off hanya nge-block check-in baru (di-handle di bawah setelah cek activeRecord).
+    } else {
+      shiftId = roster.shift_id
+    }
+  }
+
+  // 2. Fallback ke recurring shift assignment (employee_shifts)
+  if (!shiftId && !todayIsOff) {
+    const { data: empShift } = await admin
+      .from('employee_shifts')
+      .select('shift_id, shifts(work_days)')
+      .eq('user_id', user_id)
+      .eq('is_active', true)
+      .lte('effective_date', today)
+      .or(`end_date.is.null,end_date.gte.${today}`)
+      .order('effective_date', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    if (empShift) {
+      // Ambil work_days dari nested shift object (handle tipe array dari supabase-js)
+      const shiftRow = Array.isArray(empShift.shifts) ? empShift.shifts[0] : empShift.shifts
+      const workDays: number[] = shiftRow?.work_days ?? [1, 2, 3, 4, 5]
+      if (workDays.includes(todayDow)) {
+        shiftId = empShift.shift_id
+      }
+    }
+  }
+
   // Upload photo
   const faceStatus = face_verified ? 'verified' : (face_verified === false ? 'failed' : 'skipped')
   const type = 'checkin'
@@ -244,19 +296,38 @@ export async function POST(req: NextRequest) {
 
   if (!activeRecord) {
     // CHECK-IN
-    const { error: insertError } = await admin.from('attendances').insert({
+    // Hari ini di-set libur di roster → tolak check-in baru.
+    // (Checkout untuk record yg sudah ada tetap diizinkan di branch bawah.)
+    if (todayIsOff) {
+      return NextResponse.json(
+        { error: 'Hari ini Anda dijadwalkan libur menurut roster. Hubungi admin HR bila ada kekeliruan.' },
+        { status: 403 }
+      )
+    }
+
+    // shift_id diperlukan supaya DB trigger calculate_attendance_status bisa
+    // set status 'hadir'/'terlambat' otomatis berdasarkan jam masuk vs shift.
+    // Kalau tidak ada shift (user belum di-assign / lembur), pakai default 'hadir'.
+    const insertPayload: Record<string, unknown> = {
       user_id,
       date: today,
       check_in_time: now.toISOString(),
       check_in_photo_url: signedUrl,
-      status: 'hadir',
       face_verification_status: faceStatus,
       face_confidence: face_confidence ?? null,
       check_in_lat: latitude ?? null,
       check_in_lng: longitude ?? null,
       check_in_accuracy: accuracy ?? null,
       is_gps_suspected: gpsSuspected,
-    })
+    }
+    if (shiftId) {
+      insertPayload.shift_id = shiftId
+    } else {
+      // Tidak ada shift → trigger tidak akan fire, jadi set status manual
+      insertPayload.status = 'hadir'
+    }
+
+    const { error: insertError } = await admin.from('attendances').insert(insertPayload)
 
     if (insertError) {
       return NextResponse.json({ error: 'Gagal menyimpan check-in' }, { status: 500 })

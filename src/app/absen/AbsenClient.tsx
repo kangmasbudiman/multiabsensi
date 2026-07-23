@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { Check, Camera, ArrowLeft, Building2, ScanFace, MapPin, MapPinOff, LogOut } from 'lucide-react'
+import { Check, Camera, ArrowLeft, Building2, ScanFace, MapPin, MapPinOff, LogIn, LogOut } from 'lucide-react'
 
 type OfficeLocation = { name: string; latitude: number; longitude: number; radius_meters: number }
 type Org = { id: string; name: string; address?: string | null }
@@ -170,6 +170,20 @@ export default function AbsenClient({ appName = 'AbsenKu' }: { appName?: string 
       similarity: number
     }
     checkInTime: string
+  } | null>(null)
+
+  // Check-in confirmation — populated when face identified & user belum check-in.
+  // Mencegah check-in tak sengaja akibat kamera menangkap wajah 2x atau lewat
+  // tanpa niat absen. Mirror struktur pendingCheckout tanpa checkInTime.
+  const [pendingCheckin, setPendingCheckin] = useState<{
+    base64: string
+    employeeData: {
+      user_id: string
+      full_name: string
+      employee_id: string | null
+      position: string | null
+      similarity: number
+    }
   } | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
@@ -453,6 +467,7 @@ export default function AbsenClient({ appName = 'AbsenKu' }: { appName?: string 
               body: JSON.stringify({
                 org_code: orgCode.trim(),
                 captured_descriptor: faceResult.descriptor,
+                device_fingerprint: getDeviceFingerprint(),
               }),
             })
             const data = await res.json()
@@ -580,8 +595,10 @@ export default function AbsenClient({ appName = 'AbsenKu' }: { appName?: string 
         return
       }
 
-      // Belum check-in → langsung submit (tetap cepat, 1 detik)
-      await submitAttendance(base64, data)
+      // Belum check-in → simpan pending, minta konfirmasi eksplisit sebelum submit.
+      // Mencegah check-in tak sengaja saat user lewat kamera tanpa niat absen.
+      setPendingCheckin({ base64, employeeData: data })
+      setStep('confirm')
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Gagal memeriksa status absensi')
       setStep('scan')
@@ -596,6 +613,7 @@ export default function AbsenClient({ appName = 'AbsenKu' }: { appName?: string 
     setResult(null)
     setTodayStatus(null)
     setPendingCheckout(null)
+    setPendingCheckin(null)
     setSubmitting(false)
     setError('')
     setScanStatus('')
@@ -1039,29 +1057,83 @@ export default function AbsenClient({ appName = 'AbsenKu' }: { appName?: string 
             />
           )}
 
-          {/* Step: Confirm checkout — mencegah check-out tak sengaja */}
-          {step === 'confirm' && pendingCheckout && (
+          {/* Step: Confirm — mencegah check-in/check-out tak sengaja */}
+          {step === 'confirm' && (pendingCheckin || pendingCheckout) && (() => {
+            const similarity = pendingCheckin?.employeeData.similarity ?? pendingCheckout!.employeeData.similarity
+            const matchPct = Math.round(similarity * 100)
+            const isLowConfidence = similarity < 0.7
+            return (
             <div className="bg-white rounded-2xl shadow-2xl overflow-hidden">
               <div className="p-6 text-center">
-                <div className="w-16 h-16 bg-amber-50 rounded-2xl flex items-center justify-center mx-auto mb-5">
-                  <LogOut className="w-8 h-8 text-amber-600" />
-                </div>
-                <h2 className="text-lg font-bold text-gray-900 mb-1">Konfirmasi Check-out</h2>
-                <p className="text-sm font-semibold text-gray-700 mb-4">
-                  {pendingCheckout.employeeData.full_name}
-                </p>
-                <div className="bg-teal-50 rounded-xl px-4 py-3 mb-5">
-                  <p className="text-xs text-teal-700 mb-1">Anda sudah check-in hari ini:</p>
-                  <p className="text-2xl font-bold text-teal-600">
-                    {new Date(pendingCheckout.checkInTime).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' })} WIB
-                  </p>
-                </div>
-                <p className="text-sm text-gray-500 mb-6">
-                  Lanjutkan check-out sekarang?
-                </p>
+                {pendingCheckin ? (
+                  <>
+                    <div className="w-16 h-16 bg-teal-50 rounded-2xl flex items-center justify-center mx-auto mb-5">
+                      <LogIn className="w-8 h-8 text-teal-600" />
+                    </div>
+                    <h2 className="text-lg font-bold text-gray-900 mb-1">Konfirmasi Check-in</h2>
+                    <p className="text-sm font-semibold text-gray-700 mb-2">
+                      {pendingCheckin.employeeData.full_name}
+                    </p>
+                    {/* Similarity badge */}
+                    <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold mb-4 ${
+                      isLowConfidence
+                        ? 'bg-amber-100 text-amber-700'
+                        : 'bg-green-100 text-green-700'
+                    }`}>
+                      <span className={`w-1.5 h-1.5 rounded-full ${isLowConfidence ? 'bg-amber-500' : 'bg-green-500'}`} />
+                      Match {matchPct}%
+                    </div>
+                    {isLowConfidence && (
+                      <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 mb-4">
+                        <p className="text-xs text-amber-800 font-medium">
+                          ⚠️ Tingkat kemiripan rendah ({matchPct}%). Pastikan nama di atas benar-benar Anda sebelum melanjutkan.
+                        </p>
+                      </div>
+                    )}
+                    <p className="text-sm text-gray-500 mb-6">
+                      Catat kehadiran Anda sekarang?
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <div className="w-16 h-16 bg-amber-50 rounded-2xl flex items-center justify-center mx-auto mb-5">
+                      <LogOut className="w-8 h-8 text-amber-600" />
+                    </div>
+                    <h2 className="text-lg font-bold text-gray-900 mb-1">Konfirmasi Check-out</h2>
+                    <p className="text-sm font-semibold text-gray-700 mb-2">
+                      {pendingCheckout!.employeeData.full_name}
+                    </p>
+                    {/* Similarity badge */}
+                    <div className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold mb-4 ${
+                      isLowConfidence
+                        ? 'bg-amber-100 text-amber-700'
+                        : 'bg-green-100 text-green-700'
+                    }`}>
+                      <span className={`w-1.5 h-1.5 rounded-full ${isLowConfidence ? 'bg-amber-500' : 'bg-green-500'}`} />
+                      Match {matchPct}%
+                    </div>
+                    <div className="bg-teal-50 rounded-xl px-4 py-3 mb-4">
+                      <p className="text-xs text-teal-700 mb-1">Anda sudah check-in hari ini:</p>
+                      <p className="text-2xl font-bold text-teal-600">
+                        {new Date(pendingCheckout!.checkInTime).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' })} WIB
+                      </p>
+                    </div>
+                    {isLowConfidence && (
+                      <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 mb-4">
+                        <p className="text-xs text-amber-800 font-medium">
+                          ⚠️ Tingkat kemiripan rendah ({matchPct}%). Pastikan nama di atas benar-benar Anda sebelum melanjutkan.
+                        </p>
+                      </div>
+                    )}
+                    <p className="text-sm text-gray-500 mb-6">
+                      Lanjutkan check-out sekarang?
+                    </p>
+                  </>
+                )}
                 <div className="grid grid-cols-2 gap-3">
                   <button
                     onClick={() => {
+                      setPendingCheckin(null)
                       setPendingCheckout(null)
                       setStep('scan')
                     }}
@@ -1072,18 +1144,30 @@ export default function AbsenClient({ appName = 'AbsenKu' }: { appName?: string 
                   </button>
                   <button
                     onClick={() => {
-                      const { base64, employeeData } = pendingCheckout
-                      setPendingCheckout(null)
-                      void submitAttendance(base64, employeeData)
+                      if (pendingCheckin) {
+                        const { base64, employeeData } = pendingCheckin
+                        setPendingCheckin(null)
+                        void submitAttendance(base64, employeeData)
+                      } else if (pendingCheckout) {
+                        const { base64, employeeData } = pendingCheckout
+                        setPendingCheckout(null)
+                        void submitAttendance(base64, employeeData)
+                      }
                     }}
                     disabled={submitting}
-                    className="py-3 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-semibold disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
+                    className={`py-3 text-white rounded-xl font-semibold disabled:opacity-50 transition-colors flex items-center justify-center gap-2 ${
+                      pendingCheckin
+                        ? 'bg-teal-600 hover:bg-teal-700'
+                        : 'bg-amber-500 hover:bg-amber-600'
+                    }`}
                   >
                     {submitting ? (
                       <>
                         <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
                         Memproses...
                       </>
+                    ) : pendingCheckin ? (
+                      'Ya, Check-in'
                     ) : (
                       'Ya, Check-out'
                     )}
@@ -1094,7 +1178,8 @@ export default function AbsenClient({ appName = 'AbsenKu' }: { appName?: string 
                 </p>
               </div>
             </div>
-          )}
+            )
+          })()}
         </div>
       </main>
 

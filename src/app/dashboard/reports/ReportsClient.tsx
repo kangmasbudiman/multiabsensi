@@ -31,7 +31,7 @@ const DAY_ABBR = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab']
 
 const statusLabels: Record<string, { label: string; short: string; class: string; cellClass: string }> = {
   hadir: { label: 'Hadir', short: 'H', class: 'bg-green-100 text-green-700', cellClass: 'bg-green-50 text-green-700' },
-  terlambat: { label: 'Terlambat', short: 'T', class: 'bg-yellow-100 text-yellow-700', cellClass: 'bg-yellow-50 text-yellow-700' },
+  terlambat: { label: 'Terlambat', short: 'T', class: 'bg-red-200 text-red-800', cellClass: 'bg-red-200 text-red-800 font-bold' },
   alpha: { label: 'Alpha', short: 'A', class: 'bg-red-100 text-red-700', cellClass: 'bg-red-50 text-red-700' },
   izin: { label: 'Izin', short: 'I', class: 'bg-blue-100 text-blue-700', cellClass: 'bg-blue-50 text-blue-700' },
   sakit: { label: 'Sakit', short: 'S', class: 'bg-purple-100 text-purple-700', cellClass: 'bg-purple-50 text-purple-700' },
