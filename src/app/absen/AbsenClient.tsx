@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useCallback, useEffect } from 'react'
-import { Check, Camera, ArrowLeft, Building2, ScanFace, MapPin, MapPinOff, LogIn, LogOut } from 'lucide-react'
+import { Check, Camera, ArrowLeft, Building2, ScanFace, MapPin, MapPinOff, LogIn, LogOut, AlertTriangle } from 'lucide-react'
 
 type OfficeLocation = { name: string; latitude: number; longitude: number; radius_meters: number }
 type Org = { id: string; name: string; address?: string | null }
@@ -22,11 +22,13 @@ function AutoRedirectResult({
   type,
   time,
   employeeName,
+  warning,
   onRedirect,
 }: {
   type: 'checkin' | 'checkout'
   time: string
   employeeName?: string
+  warning?: string | null
   onRedirect: () => void
 }) {
   const [countdown, setCountdown] = useState(3)
@@ -56,10 +58,16 @@ function AutoRedirectResult({
         {type === 'checkin' ? 'Check-in Berhasil!' : 'Check-out Berhasil!'}
       </h2>
       <p className="text-sm text-gray-500 mb-5">{employeeName}</p>
-      <div className="bg-teal-50 rounded-xl px-6 py-4 mb-6">
+      <div className="bg-teal-50 rounded-xl px-6 py-4 mb-4">
         <p className="text-3xl font-bold text-teal-600">{time} WIB</p>
       </div>
-      {type === 'checkin' && (
+      {warning && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 mb-4 flex items-start gap-2.5 text-left">
+          <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+          <p className="text-xs text-amber-800 leading-relaxed">{warning}</p>
+        </div>
+      )}
+      {type === 'checkin' && !warning && (
         <p className="text-xs text-gray-400 mb-4">Jangan lupa check-out sebelum pulang</p>
       )}
       <div className="space-y-2">
@@ -156,7 +164,7 @@ export default function AbsenClient({ appName = 'AbsenKu' }: { appName?: string 
   const [todayStatus, setTodayStatus] = useState<{ has_checked_in: boolean; has_checked_out: boolean } | null>(null)
 
   // Result
-  const [result, setResult] = useState<{ type: 'checkin' | 'checkout'; time: string } | null>(null)
+  const [result, setResult] = useState<{ type: 'checkin' | 'checkout'; time: string; warning?: string | null } | null>(null)
 
   // Checkout confirmation — populated when user has already checked in today.
   // Holds the captured photo + identity so we can resume submit without re-detecting.
@@ -545,7 +553,7 @@ export default function AbsenClient({ appName = 'AbsenKu' }: { appName?: string 
         similarity: employeeData.similarity,
         photoUrl: null,
       })
-      setResult({ type: result.type, time: result.time })
+      setResult({ type: result.type, time: result.time, warning: result.warning })
       setStep('result')
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Gagal menyimpan absensi')
@@ -1042,6 +1050,7 @@ export default function AbsenClient({ appName = 'AbsenKu' }: { appName?: string 
             <AutoRedirectResult
               type={result.type}
               time={result.time}
+              warning={result.warning}
               employeeName={identifiedEmployee?.full_name}
               onRedirect={() => {
                 stopCamera()

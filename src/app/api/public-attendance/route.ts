@@ -327,6 +327,10 @@ export async function POST(req: NextRequest) {
       insertPayload.status = 'hadir'
     }
 
+    // Flag kalau karyawan belum punya jadwal shift. Tetap allow check-in,
+    // tapi kasih notif di UI supaya minta di-setup shift-nya.
+    const needsShiftSetup = !shiftId
+
     const { error: insertError } = await admin.from('attendances').insert(insertPayload)
 
     if (insertError) {
@@ -337,6 +341,9 @@ export async function POST(req: NextRequest) {
       success: true,
       type: 'checkin',
       time: now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' }),
+      warning: needsShiftSetup
+        ? 'Jadwal shift Anda belum diatur. Silakan minta admin/HR untuk membuatkan jadwal shift.'
+        : null,
     })
   } else if (activeRecord!.check_in_time && !activeRecord!.check_out_time) {
     // CHECK-OUT
