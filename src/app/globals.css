@@ -141,3 +141,176 @@
 .animate-marquee:hover {
   animation-play-state: paused;
 }
+
+/* ── Landing reveal-on-scroll ──────────────────────────────────────── */
+.reveal {
+  opacity: 0;
+  transform: translateY(24px);
+  transition: opacity 0.6s cubic-bezier(0.22, 1, 0.36, 1),
+              transform 0.6s cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: opacity, transform;
+}
+.reveal.is-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+.animate-float {
+  animation: float 6s ease-in-out infinite;
+}
+
+@keyframes float-delayed {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-12px); }
+}
+.animate-float-delayed {
+  animation: float-delayed 8s ease-in-out infinite;
+  animation-delay: 1s;
+}
+
+/* Glow pulse for hero blobs */
+@keyframes glow-pulse {
+  0%, 100% { opacity: 0.35; transform: scale(1); }
+  50% { opacity: 0.6; transform: scale(1.08); }
+}
+.animate-glow {
+  animation: glow-pulse 7s ease-in-out infinite;
+}
+
+/* Slow blob drift — adds parallax-like motion to background glows */
+@keyframes blob-drift-1 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(30px, -20px) scale(1.1); }
+  66% { transform: translate(-20px, 25px) scale(0.95); }
+}
+@keyframes blob-drift-2 {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(-25px, 20px) scale(1.05); }
+  66% { transform: translate(20px, -15px) scale(1.1); }
+}
+.animate-blob-1 { animation: blob-drift-1 18s ease-in-out infinite; }
+.animate-blob-2 { animation: blob-drift-2 22s ease-in-out infinite; }
+
+/* Animated gradient background pan */
+@keyframes gradient-pan {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+.animate-gradient-pan {
+  background-size: 200% 200%;
+  animation: gradient-pan 12s ease infinite;
+}
+
+/* Hero entrance — staggered fade-up on load */
+@keyframes hero-fade-up {
+  0% { opacity: 0; transform: translateY(24px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+.hero-stagger > * {
+  opacity: 0;
+  animation: hero-fade-up 0.9s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+.hero-stagger > *:nth-child(1) { animation-delay: 0.05s; }
+.hero-stagger > *:nth-child(2) { animation-delay: 0.15s; }
+.hero-stagger > *:nth-child(3) { animation-delay: 0.25s; }
+.hero-stagger > *:nth-child(4) { animation-delay: 0.35s; }
+.hero-stagger > *:nth-child(5) { animation-delay: 0.45s; }
+.hero-stagger > *:nth-child(6) { animation-delay: 0.55s; }
+.hero-stagger > *:nth-child(7) { animation-delay: 0.65s; }
+
+/* Right column entrance */
+@keyframes hero-slide-in {
+  0% { opacity: 0; transform: translateY(40px) scale(0.96); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+.hero-slide-in {
+  opacity: 0;
+  animation: hero-slide-in 1s cubic-bezier(0.22, 1, 0.36, 1) 0.3s forwards;
+}
+
+/* Face-scan line over the photo */
+@keyframes scan {
+  0% { transform: translateY(0); opacity: 0; }
+  10% { opacity: 1; }
+  90% { opacity: 1; }
+  100% { transform: translateY(100%); opacity: 0; }
+}
+.animate-scan {
+  animation: scan 3s ease-in-out infinite;
+}
+
+/* Pulse ring (for GPS / verified dots) */
+@keyframes pulse-ring {
+  0% { transform: scale(0.8); opacity: 0.8; }
+  100% { transform: scale(2.4); opacity: 0; }
+}
+.animate-pulse-ring {
+  animation: pulse-ring 2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+/* Shimmer sweep (CTA button) */
+@keyframes shimmer {
+  0% { transform: translateX(-150%) skewX(-12deg); }
+  100% { transform: translateX(250%) skewX(-12deg); }
+}
+.animate-shimmer {
+  animation: shimmer 3.5s ease-in-out infinite;
+}
+
+/* Orbit — dots circling around the photo */
+@keyframes orbit {
+  from { transform: rotate(0deg) translateX(var(--orbit-r, 180px)) rotate(0deg); }
+  to { transform: rotate(360deg) translateX(var(--orbit-r, 180px)) rotate(-360deg); }
+}
+
+/* Gentle bob */
+@keyframes bob {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(-6px) rotate(2deg); }
+}
+.animate-bob { animation: bob 5s ease-in-out infinite; }
+
+/* Grid pattern background for hero */
+.bg-grid-pattern {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+/* Animated grid pan */
+@keyframes grid-pan {
+  0% { background-position: 0 0; }
+  100% { background-position: 40px 40px; }
+}
+.bg-grid-pattern-animated {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+  background-size: 40px 40px;
+  animation: grid-pan 8s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+  .animate-float, .animate-float-delayed, .animate-glow, .animate-marquee,
+  .animate-blob-1, .animate-blob-2, .animate-gradient-pan, .animate-scan,
+  .animate-pulse-ring, .animate-shimmer, .animate-bob,
+  .bg-grid-pattern-animated {
+    animation: none;
+  }
+  .hero-stagger > *, .hero-slide-in {
+    opacity: 1;
+    animation: none;
+    transform: none;
+  }
+}
