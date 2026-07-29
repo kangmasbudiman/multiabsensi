@@ -30,6 +30,12 @@ const SHIFT_COLORS = [
   'bg-orange-500 text-white',
   'bg-rose-500 text-white',
   'bg-indigo-500 text-white',
+  'bg-emerald-500 text-white',
+  'bg-amber-500 text-white',
+  'bg-cyan-500 text-white',
+  'bg-fuchsia-500 text-white',
+  'bg-lime-600 text-white',
+  'bg-sky-500 text-white',
 ]
 const SHIFT_COLORS_LIGHT = [
   'bg-teal-100 text-teal-700 border-teal-200',
@@ -38,9 +44,65 @@ const SHIFT_COLORS_LIGHT = [
   'bg-orange-100 text-orange-700 border-orange-200',
   'bg-rose-100 text-rose-700 border-rose-200',
   'bg-indigo-100 text-indigo-700 border-indigo-200',
+  'bg-emerald-100 text-emerald-700 border-emerald-200',
+  'bg-amber-100 text-amber-700 border-amber-200',
+  'bg-cyan-100 text-cyan-700 border-cyan-200',
+  'bg-fuchsia-100 text-fuchsia-700 border-fuchsia-200',
+  'bg-lime-100 text-lime-700 border-lime-200',
+  'bg-sky-100 text-sky-700 border-sky-200',
 ]
 
 const DAY_NAMES = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab']
+
+/// Bangun inisial unik per-shift. Algoritma:
+/// 1. Ambil huruf pertama tiap kata (akronim) — "Shift Pagi" → "SP"
+/// 2. Kalau cuma 1 kata, ambil 2 huruf pertama — "Pagi" → "PA"
+/// 3. Kalau tabrakan dengan shift lain, coba 3 huruf, lalu tambah angka
+///    — "Shift Sore" vs "Shift Siang" → "SS" vs "SO" (dari huruf kedua "ore")
+///    bila masih sama, akhirnya "S2"
+function buildShiftInitials(shifts: Shift[]): Record<string, string> {
+  const result: Record<string, string> = {}
+  const used = new Set<string>()
+
+  // Pre-pass: akronim mentah per shift.
+  const raws = shifts.map(s => {
+    const words = s.name.trim().split(/\s+/).filter(Boolean)
+    const acronym = words.length >= 2
+      ? words.map(w => w[0]).join('').toUpperCase()
+      : s.name.trim().toUpperCase()
+    return { id: s.id, acronym }
+  })
+
+  raws.forEach(({ id, acronym }, idx) => {
+    // Kalau nama kosong, pakai fallback "#" + index.
+    let candidate = acronym.length > 0 ? acronym.slice(0, 2) : `#${idx + 1}`
+    if (used.has(candidate)) {
+      // Coba perpanjang ke 3 huruf dari akronim.
+      const extended = acronym.length >= 3 ? acronym.slice(0, 3) : ''
+      if (extended && !used.has(extended)) {
+        candidate = extended
+      } else {
+        // Ambil huruf pertama + huruf ke-2 dari kata terakhir (lebih khas).
+        const words = shifts[idx].name.trim().split(/\s+/).filter(Boolean)
+        const lastWord = (words[words.length - 1] ?? '').toUpperCase()
+        const firstLetter = acronym[0] ?? (lastWord[0] ?? '?')
+        const alt = firstLetter + (lastWord[1] ?? '')
+        if (alt.length === 2 && !used.has(alt)) {
+          candidate = alt
+        } else {
+          // Fallback: huruf pertama + nomor urut
+          let n = 2
+          while (used.has(firstLetter + n)) n++
+          candidate = firstLetter + n
+        }
+      }
+    }
+    used.add(candidate)
+    result[id] = candidate
+  })
+
+  return result
+}
 
 export default function RosterClient({ employees, shifts, departments, schedules, holidays, month, year, orgId, isDeptHead }: Props) {
   const router = useRouter()
@@ -85,6 +147,7 @@ export default function RosterClient({ employees, shifts, departments, schedules
     shiftColorMap[s.id] = SHIFT_COLORS[i % SHIFT_COLORS.length]
     shiftColorLightMap[s.id] = SHIFT_COLORS_LIGHT[i % SHIFT_COLORS_LIGHT.length]
   })
+  const shiftInitials = buildShiftInitials(shifts)
 
   // Holiday map: date string → holiday name
   const holidayMap: Record<string, string> = {}
@@ -536,7 +599,7 @@ export default function RosterClient({ employees, shifts, departments, schedules
         <div className="flex items-center gap-2 flex-wrap ml-auto">
           {shifts.map((s, i) => (
             <span key={s.id} className={`text-xs px-2 py-1 rounded-lg font-semibold ${SHIFT_COLORS[i % SHIFT_COLORS.length]}`}>
-              {s.name.slice(0, 2)} = {s.name}
+              {shiftInitials[s.id] ?? s.name.slice(0, 2)} = {s.name}
             </span>
           ))}
           <span className="text-xs px-2 py-1 rounded-lg font-semibold bg-gray-200 text-gray-600">L = Libur</span>
@@ -630,8 +693,27 @@ export default function RosterClient({ employees, shifts, departments, schedules
                                 setActiveCellData(null)
                               } else {
                                 const rect = e.currentTarget.getBoundingClientRect()
+                                // Edge-aware positioning: keep dropdown inside viewport
+                                // and never let it slide over the sidebar.
+                                const DROP_W = 144 // w-36
+                                const DROP_H_EST = 40 + shifts.length * 32 + 32 + (sched ? 32 : 0) + (d.isHoliday ? 24 : 0)
+                                const MARGIN = 8
+
+                                // Find sidebar width so we don't cover it.
+                                const sidebarEl = document.querySelector('aside, [data-sidebar]')
+                                const sidebarW = sidebarEl ? sidebarEl.getBoundingClientRect().right : 0
+                                const minLeft = sidebarW + MARGIN + DROP_W / 2
+                                const maxLeft = window.innerWidth - MARGIN - DROP_W / 2
+
+                                let left = rect.left + rect.width / 2
+                                left = Math.max(minLeft, Math.min(maxLeft, left))
+
+                                const bottom = rect.bottom + 4
+                                const dropUp = bottom + DROP_H_EST > window.innerHeight - MARGIN
+                                const top = dropUp ? Math.max(MARGIN, rect.top - DROP_H_EST - 4) : bottom
+
                                 setActiveCell(key)
-                                setPopupPos({ top: rect.bottom + 4, left: rect.left + rect.width / 2 })
+                                setPopupPos({ top, left })
                                 setActiveCellData({ empId: emp.id, dayNum: d.num, isHoliday: d.isHoliday, holidayName: d.holidayName, sched: sched ? { ...sched } : undefined })
                               }
                             }}
@@ -645,7 +727,7 @@ export default function RosterClient({ employees, shifts, departments, schedules
                                 'bg-transparent hover:bg-gray-100 text-gray-200 hover:text-gray-400'}
                             `}
                           >
-                            {isSavingThis ? '⟳' : sched?.is_off ? 'L' : shift ? shift.name.slice(0, 2) : d.isHoliday ? '🔴' : '·'}
+                            {isSavingThis ? '⟳' : sched?.is_off ? 'L' : shift ? (shiftInitials[shift.id] ?? shift.name.slice(0, 2)) : d.isHoliday ? '🔴' : '·'}
                           </button>
                         </td>
                       )
@@ -666,7 +748,12 @@ export default function RosterClient({ employees, shifts, departments, schedules
 
       {activeCell && popupPos && activeCellData && (
         <>
-          <div className="fixed inset-0 z-[100]" onClick={() => { setActiveCell(null); setPopupPos(null); setActiveCellData(null) }} />
+          {/* Transparent backdrop — only catches outside clicks, never blocks sidebar visually */}
+          <div
+            className="fixed inset-0 z-[100]"
+            onClick={() => { setActiveCell(null); setPopupPos(null); setActiveCellData(null) }}
+            aria-hidden
+          />
           <div
             className="fixed bg-white rounded-xl shadow-xl border border-gray-100 z-[101] p-1.5 w-36"
             style={{ top: popupPos.top, left: popupPos.left, transform: 'translateX(-50%)' }}
