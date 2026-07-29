@@ -121,7 +121,8 @@ export default function RosterClient({ employees, shifts, departments, schedules
   // Bulk form state
   const [bulkEmpIds, setBulkEmpIds] = useState<string[]>([])
   const [bulkShiftId, setBulkShiftId] = useState('')
-  const [bulkType, setBulkType] = useState<'all' | 'weekdays' | 'weekdays_sat' | 'saturday' | 'sunday' | 'range' | 'off'>('weekdays')
+  const [bulkType, setBulkType] = useState<'all' | 'weekdays' | 'weekdays_sat' | 'saturday' | 'sunday' | 'range' | 'custom' | 'off'>('weekdays')
+  const [bulkDays, setBulkDays] = useState<number[]>([])
   const [bulkFrom, setBulkFrom] = useState('')
   const [bulkTo, setBulkTo] = useState('')
 
@@ -210,6 +211,7 @@ export default function RosterClient({ employees, shifts, departments, schedules
     if (bulkEmpIds.length === 0) return alert('Pilih minimal 1 karyawan')
     if (bulkType !== 'off' && !bulkShiftId) return alert('Pilih shift')
     if (bulkType === 'range' && (!bulkFrom || !bulkTo)) return alert('Isi tanggal dari-sampai')
+    if (bulkType === 'custom' && bulkDays.length === 0) return alert('Pilih minimal 1 hari')
 
     setBulkLoading(true)
 
@@ -220,6 +222,7 @@ export default function RosterClient({ employees, shifts, departments, schedules
       if (bulkType === 'saturday') return d.dayOfWeek === 6
       if (bulkType === 'sunday') return d.dayOfWeek === 0
       if (bulkType === 'off') return true
+      if (bulkType === 'custom') return bulkDays.includes(d.dayOfWeek)
       if (bulkType === 'range') {
         const from = parseInt(bulkFrom), to = parseInt(bulkTo)
         return d.num >= from && d.num <= to
@@ -442,6 +445,7 @@ export default function RosterClient({ employees, shifts, departments, schedules
                     { val: 'saturday', label: 'Sabtu' },
                     { val: 'sunday', label: 'Minggu' },
                     { val: 'all', label: 'Semua Hari' },
+                    { val: 'custom', label: 'Pilih Hari' },
                     { val: 'range', label: 'Rentang Tanggal' },
                   ].map(opt => (
                     <button key={opt.val} onClick={() => setBulkType(opt.val as any)}
@@ -466,6 +470,58 @@ export default function RosterClient({ employees, shifts, departments, schedules
                       <option value="">Sampai</option>
                       {days.map(d => <option key={d.num} value={d.num}>{d.num}</option>)}
                     </select>
+                  </div>
+                )}
+                {bulkType === 'custom' && (
+                  <div className="mt-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-gray-500">Klik hari yang mau di-shift</span>
+                      {bulkDays.length > 0 && (
+                        <button onClick={() => setBulkDays([])} className="text-xs text-teal-600 hover:underline font-medium">
+                          Reset
+                        </button>
+                      )}
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {[
+                        { dow: 1, label: 'Senin' },
+                        { dow: 2, label: 'Selasa' },
+                        { dow: 3, label: 'Rabu' },
+                        { dow: 4, label: 'Kamis' },
+                        { dow: 5, label: 'Jumat' },
+                        { dow: 6, label: 'Sabtu' },
+                        { dow: 0, label: 'Minggu' },
+                      ].map(d => {
+                        const active = bulkDays.includes(d.dow)
+                        return (
+                          <button key={d.dow}
+                            onClick={() => setBulkDays(prev => active ? prev.filter(x => x !== d.dow) : [...prev, d.dow])}
+                            className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all ${
+                              active ? 'bg-teal-500 text-white border-teal-500 shadow-sm' : 'bg-white text-gray-600 border-gray-200 hover:border-teal-300'
+                            }`}>
+                            {d.label}
+                          </button>
+                        )
+                      })}
+                    </div>
+                    {/* Quick presets untuk pola umum */}
+                    <div className="flex flex-wrap gap-1.5 pt-1">
+                      <span className="text-xs text-gray-400 self-center">Presets:</span>
+                      {[
+                        { label: 'SRJ (Sel-Rab-Jum)', days: [2, 3, 5] },
+                        { label: 'SSJ (Sen-Sab)', days: [1, 6] },
+                        { label: 'Weekend (Sab-Min)', days: [0, 6] },
+                      ].map(p => (
+                        <button key={p.label}
+                          onClick={() => setBulkDays(p.days)}
+                          className="px-2.5 py-1 rounded-lg text-[11px] font-medium border border-gray-200 bg-gray-50 text-gray-600 hover:bg-teal-50 hover:border-teal-300 hover:text-teal-700 transition-all">
+                          {p.label}
+                        </button>
+                      ))}
+                    </div>
+                    {bulkDays.length > 0 && (
+                      <p className="text-xs text-teal-600">{bulkDays.length} hari dipilih → akan dipakai ke seluruh bulan</p>
+                    )}
                   </div>
                 )}
               </div>
