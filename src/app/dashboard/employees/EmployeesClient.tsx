@@ -339,6 +339,11 @@ export default function EmployeesClient({ employees, departments, shifts, positi
   const [deactivateModal, setDeactivateModal] = useState<Employee | null>(null)
   const [deactivating, setDeactivating] = useState(false)
 
+  // Hard delete state
+  const [deleteModal, setDeleteModal] = useState<Employee | null>(null)
+  const [deleteConfirmName, setDeleteConfirmName] = useState('')
+  const [deleting, setDeleting] = useState(false)
+
   const toggleActive = (emp: Employee) => {
     if (emp.is_active) {
       setDeactivateModal(emp)
@@ -387,6 +392,37 @@ export default function EmployeesClient({ employees, departments, shifts, positi
   }
 
   const activeCount = employees.filter(e => e.is_active).length
+
+  const openDelete = (emp: Employee) => {
+    setDeleteModal(emp)
+    setDeleteConfirmName('')
+    setDeleting(false)
+    setOpenDropdown(null)
+  }
+
+  const handleDelete = async () => {
+    if (!deleteModal) return
+    if (deleteConfirmName.trim() !== deleteModal.full_name.trim()) {
+      alert('Nama yang diketik tidak cocok. Hapus dibatalkan.')
+      return
+    }
+    setDeleting(true)
+    try {
+      const res = await fetch('/api/delete-employee', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: deleteModal.id }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Gagal menghapus karyawan')
+      setDeleteModal(null)
+      router.refresh()
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'Gagal menghapus karyawan')
+    } finally {
+      setDeleting(false)
+    }
+  }
 
   // --- Face Registration Functions ---
   const openFaceRegistration = (emp: Employee) => {
@@ -787,10 +823,12 @@ export default function EmployeesClient({ employees, departments, shifts, positi
         const emp = employees.find(e => e.id === openDropdown)
         if (!btn || !emp) return null
         const rect = btn.getBoundingClientRect()
-        const menuH = 160
+        // Tinggi menu tergantung jumlah item: aktif/nonaktif + hapus (kalau nonaktif)
+        const hasDelete = !emp.is_active
+        const menuH = hasDelete ? 250 : 200
         const openUp = rect.bottom + menuH > window.innerHeight
-        const top = openUp ? rect.top - menuH : rect.bottom
-        const left = rect.right - 176
+        const top = openUp ? Math.max(8, rect.top - menuH) : rect.bottom
+        const left = Math.max(8, Math.min(rect.right - 176, window.innerWidth - 184))
         return (
           <>
             <div className="fixed inset-0 z-40" onClick={() => setOpenDropdown(null)} />
@@ -821,6 +859,17 @@ export default function EmployeesClient({ employees, departments, shifts, positi
                 <span className="text-base">{emp.is_active ? '🚫' : '✅'}</span>
                 {emp.is_active ? 'Nonaktifkan' : 'Aktifkan'}
               </button>
+              {!emp.is_active && (
+                <>
+                  <div className="my-1 border-t border-gray-100" />
+                  <button
+                    onClick={() => openDelete(emp)}
+                    className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-700 hover:bg-red-50 transition-colors font-semibold"
+                  >
+                    <span className="text-base">🗑️</span> Hapus Permanen
+                  </button>
+                </>
+              )}
             </div>
           </>
         )
@@ -1347,6 +1396,63 @@ export default function EmployeesClient({ employees, departments, shifts, positi
                   className="flex-1 py-2.5 bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white rounded-xl text-sm font-semibold transition-colors"
                 >
                   {deactivating ? 'Memproses...' : 'Ya, Nonaktifkan'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Hard Delete Confirmation Modal */}
+      {deleteModal && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md">
+            <div className="p-6 text-center border-b border-gray-100">
+              <div className="w-14 h-14 bg-red-100 rounded-full flex items-center justify-center text-3xl mx-auto mb-3">🗑️</div>
+              <h2 className="font-bold text-gray-800 text-lg">Hapus Permanen Karyawan?</h2>
+              <p className="text-sm text-gray-600 mt-1 font-medium">{deleteModal.full_name}</p>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-700 space-y-1.5">
+                <p className="font-semibold">⚠️ Tindakan ini tidak dapat dibatalkan.</p>
+                <ul className="text-xs text-red-600 list-disc pl-4 space-y-0.5">
+                  <li>Akun login karyawan dihapus permanen</li>
+                  <li>Seluruh riwayat absensi terhapus</li>
+                  <li>Data wajah, gaji, jadwal shift terhapus</li>
+                  <li>Foto absensi di storage ikut dibersihkan</li>
+                </ul>
+              </div>
+
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1.5">
+                  Ketik nama lengkap untuk konfirmasi
+                </label>
+                <input
+                  type="text"
+                  value={deleteConfirmName}
+                  onChange={e => setDeleteConfirmName(e.target.value)}
+                  placeholder={deleteModal.full_name}
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-400"
+                  autoComplete="off"
+                />
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setDeleteModal(null)}
+                  disabled={deleting}
+                  className="flex-1 py-2.5 border border-gray-200 text-gray-700 rounded-xl text-sm font-semibold hover:bg-gray-50"
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDelete}
+                  disabled={deleting || deleteConfirmName.trim() !== deleteModal.full_name.trim()}
+                  className="flex-1 py-2.5 bg-red-600 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl text-sm font-semibold transition-colors"
+                >
+                  {deleting ? 'Menghapus...' : '🗑️ Hapus Permanen'}
                 </button>
               </div>
             </div>

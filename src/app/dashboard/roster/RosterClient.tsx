@@ -54,6 +54,26 @@ const SHIFT_COLORS_LIGHT = [
 
 const DAY_NAMES = ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab']
 
+/// Hitung durasi jam dari range start-end. Otomatis handle shift cross-midnight
+/// (mis. 22:00-06:00 → 8 jam, bukan -16 jam). Format input "HH:MM" atau "HH:MM:SS".
+function shiftDurationHours(start: string, end: string): number {
+  if (!start || !end) return 0
+  const [sh, sm] = start.split(':').map(Number)
+  const [eh, em] = end.split(':').map(Number)
+  if ([sh, sm, eh, em].some(n => Number.isNaN(n))) return 0
+  let mins = (eh * 60 + em) - (sh * 60 + sm)
+  if (mins <= 0) mins += 24 * 60 // cross-midnight atau shift 24 jam
+  return mins / 60
+}
+
+/// Format jam ke string compact: 8 → "8j", 8.5 → "8.5j", 22.17 → "22j 10m"
+function formatHours(h: number): string {
+  const whole = Math.floor(h)
+  const mins = Math.round((h - whole) * 60)
+  if (mins === 0) return `${whole}j`
+  return `${whole}j ${mins}m`
+}
+
 /// Bangun inisial unik per-shift. Algoritma:
 /// 1. Ambil huruf pertama tiap kata (akronim) — "Shift Pagi" → "SP"
 /// 2. Kalau cuma 1 kata, ambil 2 huruf pertama — "Pagi" → "PA"
@@ -304,6 +324,21 @@ export default function RosterClient({ employees, shifts, departments, schedules
 
   const monthName = new Date(year, month - 1).toLocaleDateString('id-ID', { month: 'long', year: 'numeric' })
   const filledCount = (empId: string) => days.filter(d => scheduleMap[`${empId}_${dateStr(d.num)}`]).length
+
+  // Total jam kerja sebulan: jumlahkan durasi shift dari setiap sel yang ter-isi
+  // (skip hari libur/is_off). Cross-midnight shift ditangani helper.
+  const shiftById: Record<string, Shift> = Object.fromEntries(shifts.map(s => [s.id, s]))
+  const totalWorkHours = (empId: string): number => {
+    let total = 0
+    for (const d of days) {
+      const sched = scheduleMap[`${empId}_${d.dateStr}`]
+      if (!sched || sched.is_off || !sched.shift_id) continue
+      const shift = shiftById[sched.shift_id]
+      if (!shift) continue
+      total += shiftDurationHours(shift.start_time, shift.end_time)
+    }
+    return total
+  }
   const selectedDept = departments.find(d => d.id === filterDept)
 
   // Admin harus pilih departemen dulu
@@ -721,9 +756,18 @@ export default function RosterClient({ employees, shifts, departments, schedules
                         <div className="w-7 h-7 bg-teal-100 rounded-full flex items-center justify-center text-teal-600 font-bold text-xs shrink-0">
                           {emp.full_name[0]?.toUpperCase()}
                         </div>
-                        <div>
+                        <div className="min-w-0">
                           <p className="font-medium text-xs text-gray-800 whitespace-nowrap">{emp.full_name}</p>
-                          <p className="text-[10px] text-gray-400">{(emp.departments as { name: string } | null)?.name ?? '-'}</p>
+                          <p className="text-[10px] text-gray-400 truncate">{(emp.departments as { name: string } | null)?.name ?? '-'}</p>
+                          {(() => {
+                            const hrs = totalWorkHours(emp.id)
+                            if (hrs <= 0) return null
+                            return (
+                              <p className="text-[10px] text-teal-600 font-semibold flex items-center gap-0.5 mt-0.5" title="Total jam kerja bulan ini">
+                                <span aria-hidden>⏱</span>{formatHours(hrs)}
+                              </p>
+                            )
+                          })()}
                         </div>
                       </div>
                     </td>
