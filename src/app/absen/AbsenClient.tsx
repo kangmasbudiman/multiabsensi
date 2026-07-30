@@ -131,7 +131,7 @@ export default function AbsenClient({ appName = 'AbsenKu' }: { appName?: string 
   const [gpsJitter, setGpsJitter] = useState<number | null>(null)
   const [gpsMockDetected, setGpsMockDetected] = useState(false)
   const [officeLocations, setOfficeLocations] = useState<OfficeLocation[]>([])
-  const [locationStatus, setLocationStatus] = useState<'unknown' | 'checking' | 'inside' | 'outside' | 'denied' | 'no_geofence'>('unknown')
+  const [locationStatus, setLocationStatus] = useState<'unknown' | 'checking' | 'inside' | 'outside' | 'denied' | 'timeout' | 'no_geofence'>('unknown')
   const [nearestOffice, setNearestOffice] = useState<{ name: string; distance: number } | null>(null)
 
   // Strict: only allow scan when GPS proves we're inside, OR admin hasn't configured any geofence.
@@ -283,17 +283,20 @@ export default function AbsenClient({ appName = 'AbsenKu' }: { appName?: string 
   // Location check — fresh GPS reading, compute distance, set status.
   // Strict: if GPS reading is too imprecise to fit inside radius, treat as outside.
   // Anti-spoof: ambil 3 sample GPS, hitung jitter, cek flag mock provider (Android).
+  // Older iPhone (6/7/8) sering lambat cold-start GPS — timeout dinaikin ke 25s
+  // dan dibedakan dari permission denied biar UI-nya nggak mislead.
   const checkLocation = async (locations: OfficeLocation[]) => {
     setLocationStatus('checking')
+    const samples: Array<{ lat: number; lng: number; accuracy: number; mock: boolean }> = []
+    const sampleOpts: PositionOptions = {
+      enableHighAccuracy: true,
+      timeout: 25000,
+      maximumAge: 0,
+    }
     try {
-      const samples: Array<{ lat: number; lng: number; accuracy: number; mock: boolean }> = []
       for (let i = 0; i < 3; i++) {
         const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
-          navigator.geolocation.getCurrentPosition(resolve, reject, {
-            enableHighAccuracy: true,
-            timeout: 15000,
-            maximumAge: 0,
-          })
+          navigator.geolocation.getCurrentPosition(resolve, reject, sampleOpts)
         })
         // Non-standard: Android Chrome mengisi isMockProvider=true kalau lokasi palsu.
         const isMock = (pos as GeolocationPosition & { isMockProvider?: boolean }).isMockProvider === true
@@ -343,8 +346,15 @@ export default function AbsenClient({ appName = 'AbsenKu' }: { appName?: string 
 
       setNearestOffice(nearest)
       setLocationStatus(insideAny ? 'inside' : 'outside')
-    } catch {
-      setLocationStatus('denied')
+    } catch (e) {
+      const err = e as GeolocationPositionError | undefined
+      // GeolocationPositionError.code: 1=PERMISSION_DENIED, 2=POSITION_UNAVAILABLE, 3=TIMEOUT
+      // Older iPhone cold-start GPS sering timeout (>20s) — bukan berarti ditolak.
+      if (err?.code === 3) {
+        setLocationStatus('timeout')
+      } else {
+        setLocationStatus('denied')
+      }
     }
   }
 
@@ -387,20 +397,42 @@ export default function AbsenClient({ appName = 'AbsenKu' }: { appName?: string 
   }
 
   // --- Camera ---
+  // iOS Safari older model kadang nolak constraint facingMode:'user' atau
+  // resolusi ideal. Strategy: coba ideal dulu, kalau gagal fallback ke video:true
+  // (default camera), supaya user tetap bisa absen.
   const startCamera = useCallback(async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
-        audio: false,
-      })
-      streamRef.current = stream
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream
-        await videoRef.current.play()
-        setCameraReady(true)
+    const attempts: MediaStreamConstraints[] = [
+      { video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } }, audio: false },
+      { video: { facingMode: 'user' }, audio: false },
+      { video: true, audio: false },
+    ]
+    let lastError: unknown = null
+    for (const constraints of attempts) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia(constraints)
+        streamRef.current = stream
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream
+          await videoRef.current.play()
+          setCameraReady(true)
+        }
+        return
+      } catch (e) {
+        lastError = e
+        // Bersihin stream separuh kalau ada track kebuka sebelum throw.
+        if (streamRef.current) {
+          streamRef.current.getTracks().forEach(t => t.stop())
+          streamRef.current = null
+        }
       }
-    } catch {
-      setError('Gagal mengakses kamera. Pastikan izin kamera diaktifkan.')
+    }
+    const err = lastError as { name?: string } | undefined
+    if (err?.name === 'NotAllowedError') {
+      setError('Izin kamera ditolak. Aktifkan izin kamera di pengaturan browser/Safari.')
+    } else if (err?.name === 'NotFoundError' || err?.name === 'OverconstrainedError') {
+      setError('Kamera tidak terdeteksi atau tidak didukung perangkat ini.')
+    } else {
+      setError('Gagal mengakses kamera. Pastikan izin kamera diaktifkan dan tidak ada aplikasi lain yang memakai kamera.')
     }
   }, [])
 
@@ -713,22 +745,28 @@ export default function AbsenClient({ appName = 'AbsenKu' }: { appName?: string 
               <h1 className="text-2xl font-bold text-gray-900 mb-1">Absensi Face ID</h1>
               <p className="text-sm text-gray-500 mb-2">Arahkan wajah ke kamera untuk absen otomatis</p>
               <p className="text-xs text-gray-400 mb-8">Masukkan kode perusahaan untuk memulai</p>
-              <div className="space-y-4">
+              <form
+                onSubmit={e => { e.preventDefault(); void searchOrg() }}
+                className="space-y-4"
+              >
                 <input
                   value={orgCode}
                   onChange={e => setOrgCode(e.target.value.toUpperCase())}
-                  onKeyDown={e => e.key === 'Enter' && searchOrg()}
                   placeholder="Masukkan kode perusahaan"
+                  autoCapitalize="characters"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  enterKeyHint="go"
                   className="w-full px-5 py-3.5 border border-gray-200 rounded-xl text-sm font-mono tracking-widest text-center text-lg focus:outline-none focus:ring-2 focus:ring-teal-400 focus:border-transparent"
                 />
                 <button
-                  onClick={() => searchOrg()}
+                  type="submit"
                   disabled={loading || !orgCode.trim()}
                   className="w-full py-3.5 bg-teal-600 hover:bg-teal-700 disabled:opacity-50 text-white rounded-xl font-semibold transition-colors"
                 >
                   {loading ? 'Mencari...' : 'Masuk'}
                 </button>
-              </div>
+              </form>
             </div>
           )}
 
@@ -885,6 +923,11 @@ export default function AbsenClient({ appName = 'AbsenKu' }: { appName?: string 
                       <p className="text-sm text-gray-500">
                         Izin lokasi ditolak. Aktifkan izin lokasi di browser Anda agar sistem dapat memverifikasi kehadiran Anda.
                       </p>
+                    ) : locationStatus === 'timeout' ? (
+                      <p className="text-sm text-gray-500">
+                        Sinyal GPS lemah atau lambat terbaca (umum di iPhone lawas atau di dalam ruangan).
+                        Coba pindah ke lokasi terbuka dekat jendela, lalu tekan tombol di bawah.
+                      </p>
                     ) : nearestOffice ? (
                       <p className="text-sm text-gray-500">
                         Anda berada <span className="font-bold text-red-600">{nearestOffice.distance}m</span> dari{' '}
@@ -919,6 +962,7 @@ export default function AbsenClient({ appName = 'AbsenKu' }: { appName?: string 
                         locationStatus === 'inside' ? 'bg-green-100 text-green-700' :
                         locationStatus === 'outside' ? 'bg-red-100 text-red-700' :
                         locationStatus === 'denied' ? 'bg-amber-100 text-amber-700' :
+                        locationStatus === 'timeout' ? 'bg-orange-100 text-orange-700' :
                         locationStatus === 'checking' ? 'bg-blue-100 text-blue-700' :
                         'bg-gray-100 text-gray-600'
                       }`}>

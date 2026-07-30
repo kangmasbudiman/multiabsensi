@@ -108,10 +108,15 @@ export async function POST(req: NextRequest) {
     )
   }
   if (Array.isArray(gps_samples) && gps_samples.length >= 2 && gps_jitter === 0) {
-    return NextResponse.json(
-      { error: 'Pembacaan GPS tidak natural (tidak ada jitter). Kemungkinan lokasi palsu.' },
-      { status: 403 }
-    )
+    // iOS Safari sering return koordinat identik antar sample (caching aggressive
+    // + WiFi positioning di iPhone older model). Real GPS hampir nggak pernah
+    // akurasi <3m. Cuma block kalau JUGA akurasi sempurna — indikator kuat fake GPS.
+    if (accuracy != null && accuracy < 3) {
+      return NextResponse.json(
+        { error: 'Pembacaan GPS tidak natural (akurasi sempurna, tidak ada jitter). Kemungkinan lokasi palsu.' },
+        { status: 403 }
+      )
+    }
   }
   // Flag suspected (accuracy terlalu sempurna / jitter sangat rendah) — tetap accept,
   // tapi tandai di DB untuk review admin.
