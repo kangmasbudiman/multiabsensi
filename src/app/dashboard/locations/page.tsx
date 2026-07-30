@@ -6,5 +6,5 @@ export default async function LocationsPage() {
   const { data: { user } } = await supabase.auth.getUser()
   const { data: profile } = await supabase.from('profiles').select('org_id').eq('id', user!.id).single()
   const { data: locations } = await supabase.from('office_locations').select('*').eq('org_id', profile!.org_id).order('name')
-  return <LocationsClient locations={locations ?? []} orgId={profile!.org_id} />
+  return <LocationsClient locations={locations ?? []} />
 }
