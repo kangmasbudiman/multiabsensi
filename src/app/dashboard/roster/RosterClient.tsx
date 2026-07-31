@@ -212,7 +212,12 @@ export default function RosterClient({ employees, shifts, departments, schedules
       { user_id: userId, org_id: orgId, shift_id: isOff ? null : shiftId, date, is_off: isOff },
       { onConflict: 'user_id,date' }
     )
-    if (!error) setScheduleMap(prev => ({ ...prev, [key]: { user_id: userId, shift_id: shiftId, date, is_off: isOff } }))
+    if (error) {
+      console.error('[roster.assignCell] upsert gagal:', error)
+      alert(`Gagal menyimpan jadwal: ${error.message}\n\nKode: ${error.code}`)
+    } else {
+      setScheduleMap(prev => ({ ...prev, [key]: { user_id: userId, shift_id: shiftId, date, is_off: isOff } }))
+    }
     setSaving(null)
   }, [orgId])
 
