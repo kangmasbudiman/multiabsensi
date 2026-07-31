@@ -363,7 +363,7 @@ export default function AbsenClient({ appName = 'AbsenKu' }: { appName?: string 
   }
 
   const searchOrg = async (codeOverride?: string) => {
-    const code = (codeOverride ?? orgCode).trim()
+    const code = (codeOverride ?? orgCode).trim().toUpperCase()
     if (!code) return
     setLoading(true)
     setError('')
@@ -751,18 +751,23 @@ export default function AbsenClient({ appName = 'AbsenKu' }: { appName?: string 
               >
                 <input
                   value={orgCode}
-                  onChange={e => setOrgCode(e.target.value.toUpperCase())}
+                  onChange={e => setOrgCode(e.target.value)}
                   placeholder="Masukkan kode perusahaan"
                   autoCapitalize="characters"
                   autoCorrect="off"
                   spellCheck={false}
+                  autoComplete="off"
+                  inputMode="text"
                   enterKeyHint="go"
-                  className="w-full px-5 py-3.5 border border-gray-200 rounded-xl text-sm font-mono tracking-widest text-center text-lg focus:outline-none focus:ring-2 focus:ring-teal-400 focus:border-transparent"
+                  autoFocus
+                  style={{ touchAction: 'manipulation' }}
+                  className="w-full px-5 py-3.5 border border-gray-200 rounded-xl text-base font-mono tracking-widest text-center focus:outline-none focus:ring-2 focus:ring-teal-400 focus:border-transparent"
                 />
                 <button
                   type="submit"
                   disabled={loading || !orgCode.trim()}
-                  className="w-full py-3.5 bg-teal-600 hover:bg-teal-700 disabled:opacity-50 text-white rounded-xl font-semibold transition-colors"
+                  style={{ touchAction: 'manipulation' }}
+                  className="w-full py-3.5 bg-teal-600 hover:bg-teal-700 active:bg-teal-800 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl font-semibold transition-colors cursor-pointer"
                 >
                   {loading ? 'Mencari...' : 'Masuk'}
                 </button>
