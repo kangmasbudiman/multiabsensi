@@ -48,28 +48,40 @@ export default async function RosterPage({ searchParams }: { searchParams: Promi
     empQuery = empQuery.eq('department_id', profile!.department_id)
   }
 
+  // Supabase Cloud nge-cap response di 1000 rows (PostgREST max-rows config,
+  // nggak bisa di-override dari client walau .limit(N) > 1000). Untuk bypass,
+  // kita hit API beberapa kali pakai .range() — masing-masing minta 1000 rows.
+  // 5 pages x 1000 = max 5000 rows (cukup buat ~160 karyawan x 31 hari).
+  const PAGE_SIZE = 1000
+  const MAX_PAGES = 5
+
   const [
     { data: employees },
     { data: shifts },
     { data: departments },
-    { data: schedules, error: schedulesErr },
     { data: holidays },
+    ...schedulePages
   ] = await Promise.all([
     empQuery,
     supabase.from('shifts').select('*').eq('org_id', orgId).order('start_time'),
     supabase.from('departments').select('id, name').eq('org_id', orgId).order('name'),
-    supabase.from('shift_schedules')
-      .select('user_id, shift_id, date, is_off')
-      .eq('org_id', orgId)
-      .gte('date', startDate)
-      .lte('date', endDate)
-      .limit(10000),
     supabase.from('holidays')
       .select('date, name, is_national')
       .eq('org_id', orgId)
       .gte('date', `${year}-01-01`)
       .lte('date', `${year}-12-31`),
+    ...Array.from({ length: MAX_PAGES }, (_, i) =>
+      supabase.from('shift_schedules')
+        .select('user_id, shift_id, date, is_off')
+        .eq('org_id', orgId)
+        .gte('date', startDate)
+        .lte('date', endDate)
+        .range(i * PAGE_SIZE, (i + 1) * PAGE_SIZE - 1)
+    ),
   ])
+
+  const schedulesErr = schedulePages.find(p => p.error)?.error
+  const schedules = schedulePages.flatMap(p => p.data ?? [])
 
   // Debug: log di terminal server (output `npm run dev`) — kalau select
   // shift_schedules error atau kosong padahal harusnya ada data, kelihatan di sini.
