@@ -1,14 +1,17 @@
 -- =====================================================================
 -- RLS policy lengkap untuk shift_schedules (tabel Roster)
 -- =====================================================================
--- Bug: assignCell di /dashboard/roster gagal diam-diam karena policy write
--- tidak ada / tidak lengkap. Migration ini nge-drop policy lama (kalau ada)
--- dan recreate dengan benar pakai helper is_admin() (super_admin + admin).
+-- Bug 1: policy write nggak ada → upsert gagal diam-diam
+-- Bug 2: policy pakai `org_id = get_user_org()` NGE-BLOCK super_admin
+--        yang lagi inspect org lain (get_user_org() return null untuk
+--        super_admin, padahal org_id di row = inspect_org_id).
+--
+-- Fix: samakan pattern dengan employee_shifts — pakai is_admin() tanpa
+-- org check. Super_admin/admin bisa write di org manapun (platform owner).
 
--- Pastikan RLS aktif
 ALTER TABLE shift_schedules ENABLE ROW LEVEL SECURITY;
 
--- Drop policy lama (defensive — kalau ada)
+-- Drop policy lama (defensive)
 DROP POLICY IF EXISTS "shift_sched_select" ON shift_schedules;
 DROP POLICY IF EXISTS "shift_sched_admin_all" ON shift_schedules;
 DROP POLICY IF EXISTS "shift_sched_insert" ON shift_schedules;
@@ -16,23 +19,17 @@ DROP POLICY IF EXISTS "shift_sched_update" ON shift_schedules;
 DROP POLICY IF EXISTS "shift_sched_delete" ON shift_schedules;
 DROP POLICY IF EXISTS "shift_sched_dept_head_managed" ON shift_schedules;
 
--- 1. Read: org member bisa baca roster org-nya sendiri
+-- 1. Read: org member (org_id match) ATAU super_admin/admin (bisa akses semua org)
 CREATE POLICY "shift_sched_select" ON shift_schedules
   FOR SELECT USING (
-    org_id = get_user_org()
+    org_id = get_user_org() OR is_admin()
   );
 
--- 2. Write: admin/super_admin bisa insert/update/delete di org-nya
+-- 2. Write: admin/super_admin bebas kelola (tanpa org check, sama kayak employee_shifts)
 CREATE POLICY "shift_sched_admin_all" ON shift_schedules
   FOR ALL
-  USING (
-    org_id = get_user_org()
-    AND is_admin()
-  )
-  WITH CHECK (
-    org_id = get_user_org()
-    AND is_admin()
-  );
+  USING (is_admin())
+  WITH CHECK (is_admin());
 
--- Verifikasi (jalankan di SQL Editor setelah run migration):
--- SELECT tablename, policyname, cmd, roles FROM pg_policies WHERE tablename = 'shift_schedules';
+-- Verifikasi:
+-- SELECT tablename, policyname, cmd, qual, with_check FROM pg_policies WHERE tablename = 'shift_schedules';
