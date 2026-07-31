@@ -62,7 +62,8 @@ export default async function RosterPage({ searchParams }: { searchParams: Promi
       .select('user_id, shift_id, date, is_off')
       .eq('org_id', orgId)
       .gte('date', startDate)
-      .lte('date', endDate),
+      .lte('date', endDate)
+      .limit(10000),
     supabase.from('holidays')
       .select('date, name, is_national')
       .eq('org_id', orgId)
