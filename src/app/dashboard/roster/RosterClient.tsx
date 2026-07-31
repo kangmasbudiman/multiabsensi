@@ -222,17 +222,32 @@ export default function RosterClient({ employees, shifts, departments, schedules
     const key = `${userId}_${date}`
     setSaving(key)
     setActiveCell(null)
-    const { error } = await supabase.from('shift_schedules').upsert(
-      { user_id: userId, org_id: orgId, shift_id: isOff ? null : shiftId, date, is_off: isOff },
-      { onConflict: 'user_id,date' }
-    )
+    const payload = { user_id: userId, org_id: orgId, shift_id: isOff ? null : shiftId, date, is_off: isOff }
+    console.info('[roster.assignCell] mulai upsert:', payload)
+    const { data: upsertData, error } = await supabase
+      .from('shift_schedules')
+      .upsert(payload, { onConflict: 'user_id,date' })
+      .select()
     if (error) {
       console.error('[roster.assignCell] upsert gagal:', error)
-      alert(`Gagal menyimpan jadwal: ${error.message}\n\nKode: ${error.code}`)
-    } else {
-      console.info('[roster.assignCell] upsert OK:', { userId, date, shiftId, isOff })
-      setScheduleMap(prev => ({ ...prev, [key]: { user_id: userId, shift_id: shiftId, date, is_off: isOff } }))
+      alert(`Gagal menyimpan jadwal: ${error.message}\n\nKode: ${error.code}\n\nDetails: ${JSON.stringify(error)}`)
+      setSaving(null)
+      return
     }
+    console.info('[roster.assignCell] upsert OK, returned rows:', upsertData)
+
+    // Verifikasi: baca balik row-nya dari DB. Kalau ini null/kosong padahal
+    // upsert sukses, berarti RLS nge-block SELECT — root cause data hilang
+    // pas refresh.
+    const { data: verify, error: verifyErr } = await supabase
+      .from('shift_schedules')
+      .select('user_id, shift_id, date, is_off, org_id')
+      .eq('user_id', userId)
+      .eq('date', date)
+      .maybeSingle()
+    console.info('[roster.assignCell] verifikasi SELECT:', { verify, verifyErr })
+
+    setScheduleMap(prev => ({ ...prev, [key]: { user_id: userId, shift_id: shiftId, date, is_off: isOff } }))
     setSaving(null)
   }, [orgId])
 

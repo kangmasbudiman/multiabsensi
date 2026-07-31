@@ -52,7 +52,7 @@ export default async function RosterPage({ searchParams }: { searchParams: Promi
     { data: employees },
     { data: shifts },
     { data: departments },
-    { data: schedules },
+    { data: schedules, error: schedulesErr },
     { data: holidays },
   ] = await Promise.all([
     empQuery,
@@ -69,6 +69,13 @@ export default async function RosterPage({ searchParams }: { searchParams: Promi
       .gte('date', `${year}-01-01`)
       .lte('date', `${year}-12-31`),
   ])
+
+  // Debug: log di terminal server (output `npm run dev`) — kalau select
+  // shift_schedules error atau kosong padahal harusnya ada data, kelihatan di sini.
+  if (schedulesErr) {
+    console.error('[roster.page] select shift_schedules error:', schedulesErr)
+  }
+  console.info(`[roster.page] orgId=${orgId}, range=${startDate}..${endDate}, schedules=${schedules?.length ?? 0} rows`)
 
   return (
     <RosterClient
