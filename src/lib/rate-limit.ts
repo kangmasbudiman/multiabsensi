@@ -44,10 +44,22 @@ export function isRateLimited(
 }
 
 /**
- * Extract client IP from Next.js request headers
+ * Extract client IP from Next.js request headers.
+ * Coba beberapa header karena Vercel, Cloudflare, dll punya preferensi beda.
  */
 export function getClientIp(req: Request): string {
-  return req.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
-    ?? req.headers.get('x-real-ip')
-    ?? 'unknown'
+  const xff = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim()
+  if (xff && xff.length > 0) return xff
+
+  const xRealIp = req.headers.get('x-real-ip')
+  if (xRealIp && xRealIp.length > 0) return xRealIp
+
+  // Vercel-specific header (paling reliable di Vercel)
+  const xVercelIp = req.headers.get('x-vercel-ip')
+  if (xVercelIp && xVercelIp.length > 0) return xVercelIp
+
+  const xVercelFwd = req.headers.get('x-vercel-forwarded-for')?.split(',')[0]?.trim()
+  if (xVercelFwd && xVercelFwd.length > 0) return xVercelFwd
+
+  return 'unknown'
 }
