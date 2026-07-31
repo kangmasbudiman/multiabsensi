@@ -6,11 +6,24 @@ export default async function DepartmentsPage() {
   const { data: { user } } = await supabase.auth.getUser()
   const { data: profile } = await supabase.from('profiles').select('org_id').eq('id', user!.id).single()
 
-  const { data: departments } = await supabase
-    .from('departments')
-    .select('id, name, description, created_at')
-    .eq('org_id', profile!.org_id)
-    .order('name')
+  const [deptResult, shiftResult] = await Promise.all([
+    supabase
+      .from('departments')
+      .select('id, name, description, default_shift_id, shifts(id, name), created_at')
+      .eq('org_id', profile!.org_id)
+      .order('name'),
+    supabase
+      .from('shifts')
+      .select('id, name, start_time, end_time')
+      .eq('org_id', profile!.org_id)
+      .order('name'),
+  ])
 
-  return <DepartmentsClient departments={departments ?? []} orgId={profile!.org_id} />
+  return (
+    <DepartmentsClient
+      departments={deptResult.data ?? []}
+      shifts={shiftResult.data ?? []}
+      orgId={profile!.org_id}
+    />
+  )
 }

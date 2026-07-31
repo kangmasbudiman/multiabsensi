@@ -4,37 +4,80 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 
+interface Shift {
+  id: string
+  name: string
+  start_time: string | null
+  end_time: string | null
+}
+
+interface NestedShift {
+  id: string
+  name: string
+}
+
 interface Department {
   id: string
   name: string
   description?: string
+  default_shift_id: string | null
+  shifts?: NestedShift | NestedShift[] | null
   created_at: string
 }
 
-export default function DepartmentsClient({ departments, orgId }: { departments: Department[]; orgId: string }) {
+export default function DepartmentsClient({
+  departments,
+  shifts,
+  orgId,
+}: {
+  departments: Department[]
+  shifts: Shift[]
+  orgId: string
+}) {
   const router = useRouter()
   const supabase = createClient()
   const [showModal, setShowModal] = useState(false)
   const [editDept, setEditDept] = useState<Department | null>(null)
   const [isLoading, setIsLoading] = useState(false)
-  const [form, setForm] = useState({ name: '', description: '' })
+  const [form, setForm] = useState({ name: '', description: '', default_shift_id: '' })
+
+  const getShiftName = (dept: Department): string | null => {
+    if (!dept.shifts) return null
+    const s = Array.isArray(dept.shifts) ? dept.shifts[0] : dept.shifts
+    return s?.name ?? null
+  }
+
+  // Lookup shift name dari list shift (untuk info tambahan di badge)
+  const findShiftName = (shiftId: string | null): string | null => {
+    if (!shiftId) return null
+    return shifts.find(s => s.id === shiftId)?.name ?? null
+  }
 
   const openAdd = () => {
     setEditDept(null)
-    setForm({ name: '', description: '' })
+    setForm({ name: '', description: '', default_shift_id: '' })
     setShowModal(true)
   }
 
   const openEdit = (d: Department) => {
     setEditDept(d)
-    setForm({ name: d.name, description: d.description ?? '' })
+    setForm({
+      name: d.name,
+      description: d.description ?? '',
+      default_shift_id: d.default_shift_id ?? '',
+    })
     setShowModal(true)
   }
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
-    const payload = { name: form.name, description: form.description || null, org_id: orgId }
+    const payload = {
+      name: form.name,
+      description: form.description || null,
+      default_shift_id: form.default_shift_id || null,
+      org_id: orgId,
+    }
     if (editDept) {
       await supabase.from('departments').update(payload).eq('id', editDept.id)
     } else {
@@ -91,6 +134,11 @@ export default function DepartmentsClient({ departments, orgId }: { departments:
                     {dept.description && (
                       <p className="text-xs text-gray-400 mt-0.5 line-clamp-2">{dept.description}</p>
                     )}
+                    {getShiftName(dept) && (
+                      <p className="inline-flex items-center gap-1 text-[11px] text-teal-700 bg-teal-50 border border-teal-200 px-2 py-0.5 rounded-full mt-1.5">
+                        🕐 Shift: <span className="font-semibold">{getShiftName(dept)}</span>
+                      </p>
+                    )}
                     <p className="text-xs text-gray-300 mt-1">
                       Dibuat {new Date(dept.created_at).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}
                     </p>
@@ -132,6 +180,27 @@ export default function DepartmentsClient({ departments, orgId }: { departments:
                   placeholder="Opsional — deskripsi singkat departemen ini"
                   rows={3}
                   className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 resize-none" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">
+                  Shift Default
+                  <span className="text-xs text-gray-400 font-normal ml-1.5">(opsional)</span>
+                </label>
+                <select
+                  value={form.default_shift_id}
+                  onChange={(e) => setForm({ ...form, default_shift_id: e.target.value })}
+                  className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-teal-400 bg-white"
+                >
+                  <option value="">— Tidak ada shift default —</option>
+                  {shifts.map(s => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}{s.start_time ? ` (${s.start_time.slice(0, 5)}–${(s.end_time ?? '').slice(0, 5)})` : ''}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-gray-500 mt-1.5 leading-relaxed">
+                  Karyawan di departemen ini otomatis pakai shift tersebut kalau belum di-assign shift individual. Cocok untuk bagian tetap seperti Management, HRD, IT.
+                </p>
               </div>
               <div className="flex gap-3 pt-1">
                 <button type="button" onClick={() => setShowModal(false)}

@@ -307,6 +307,26 @@ async function saveAttendance(params: {
     }
   }
 
+  // 3. Fallback ke default shift departemen (departments.default_shift_id)
+  //    Buat karyawan yang belum di-assign shift individual — misal bagian
+  //    Management/HRD/IT yang shift-nya tetap Senin–Jumat.
+  if (!shiftId && !todayIsOff) {
+    const { data: deptRow } = await admin
+      .from('profiles')
+      .select('department_id, departments(default_shift_id, shifts(work_days))')
+      .eq('id', user_id)
+      .maybeSingle()
+
+    const dept = Array.isArray(deptRow?.departments) ? deptRow?.departments?.[0] : deptRow?.departments
+    if (deptRow?.department_id && dept?.default_shift_id) {
+      const shiftRow = Array.isArray(dept.shifts) ? dept.shifts[0] : dept.shifts
+      const workDays: number[] = shiftRow?.work_days ?? [1, 2, 3, 4, 5]
+      if (workDays.includes(todayDow)) {
+        shiftId = dept.default_shift_id
+      }
+    }
+  }
+
   // Upload photo
   const faceStatus = face_verified ? 'verified' : (face_verified === false ? 'failed' : 'skipped')
   const type = 'checkin'
