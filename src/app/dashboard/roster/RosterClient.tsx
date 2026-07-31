@@ -162,6 +162,16 @@ export default function RosterClient({ employees, shifts, departments, schedules
     return m
   })
 
+  // Debug: log kalau schedules dari server kosong padahal harusnya ada data.
+  // Helps user verify di DevTools apakah issue di server (RLS/orgId) atau client.
+  useEffect(() => {
+    if (schedules.length === 0) {
+      console.info('[roster] schedules dari server: kosong untuk', `${year}-${month}`)
+    } else {
+      console.info('[roster] schedules dari server:', schedules.length, 'rows untuk', `${year}-${month}`, schedules)
+    }
+  }, [schedules, year, month])
+
   const shiftColorMap: Record<string, string> = {}
   const shiftColorLightMap: Record<string, string> = {}
   shifts.forEach((s, i) => {
@@ -181,7 +191,7 @@ export default function RosterClient({ employees, shifts, departments, schedules
     return {
       num: i + 1,
       dayName: DAY_NAMES[d.getDay()],
-      isWeekend: d.getDay() === 0 || d.getDay() === 6,
+      isWeekend: d.getDay() === 0,
       dayOfWeek: d.getDay(),
       dateStr,
       isHoliday: !!holidayMap[dateStr],
@@ -216,6 +226,7 @@ export default function RosterClient({ employees, shifts, departments, schedules
       console.error('[roster.assignCell] upsert gagal:', error)
       alert(`Gagal menyimpan jadwal: ${error.message}\n\nKode: ${error.code}`)
     } else {
+      console.info('[roster.assignCell] upsert OK:', { userId, date, shiftId, isOff })
       setScheduleMap(prev => ({ ...prev, [key]: { user_id: userId, shift_id: shiftId, date, is_off: isOff } }))
     }
     setSaving(null)

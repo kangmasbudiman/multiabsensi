@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { cookies } from 'next/headers'
 import RosterClient from './RosterClient'
 
 export const dynamic = 'force-dynamic'
@@ -17,11 +18,23 @@ export default async function RosterPage({ searchParams }: { searchParams: Promi
     .eq('id', user!.id)
     .single()
 
-  const orgId = profile!.org_id
+  // Super_admin yang lagi inspect org lain: override org_id pakai inspect_org_id
+  // dari cookie. Tanpa ini, roster page bakal query org_id null → data kosong.
+  let orgId = profile!.org_id
+  if (profile!.role === 'super_admin') {
+    const jar = await cookies()
+    const inspectId = jar.get('inspect_org_id')?.value
+    if (inspectId) orgId = inspectId
+  }
+
   const isDeptHead = profile!.role === 'dept_head' || profile!.position === 'kepala_ruangan'
 
+  // Timezone-safe: jangan pakai toISOString() — di UTC+7 dia bakal ngembaliin
+  // tanggal sehari sebelumnya untuk hari terakhir bulan, exclude hari terakhir
+  // dari query range.
+  const lastDay = new Date(year, month, 0).getDate()
   const startDate = `${year}-${String(month).padStart(2, '0')}-01`
-  const endDate = new Date(year, month, 0).toISOString().slice(0, 10)
+  const endDate = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
 
   let empQuery = supabase
     .from('profiles')
