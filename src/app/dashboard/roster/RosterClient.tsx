@@ -162,9 +162,13 @@ export default function RosterClient({ employees, shifts, departments, schedules
     return m
   })
 
-  // Debug: log kalau schedules dari server kosong padahal harusnya ada data.
-  // Helps user verify di DevTools apakah issue di server (RLS/orgId) atau client.
+  // Sync scheduleMap saat schedules prop berubah (pas navigasi bulan via
+  // router.push, client component nggak unmount — lazy initializer useState
+  // nggak re-run, jadi sync manual di sini).
   useEffect(() => {
+    const m: Record<string, Schedule> = {}
+    for (const s of schedules) m[`${s.user_id}_${s.date}`] = s
+    setScheduleMap(m)
     if (schedules.length === 0) {
       console.info('[roster] schedules dari server: kosong untuk', `${year}-${month}`)
     } else {
