@@ -54,6 +54,7 @@ const adminGroups: NavGroup[] = [
     icon: '📋',
     items: [
       { href: '/dashboard/locations', label: 'Lokasi Kantor', icon: '📍' },
+      { href: '/dashboard/network', label: 'IP Jaringan', icon: '🌐' },
       { href: '/dashboard/schedule', label: 'Jadwal Shift', icon: '📅' },
       { href: '/dashboard/roster', label: 'Roster Bulanan', icon: '🗓️' },
       { href: '/dashboard/attendance', label: 'Rekap Kehadiran', icon: '🗂️' },

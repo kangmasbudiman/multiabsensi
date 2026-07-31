@@ -91,7 +91,8 @@ function AutoRedirectResult({
   )
 }
 
-export default function AbsenClient({ appName = 'AbsenKu' }: { appName?: string }) {
+export default function AbsenClient({ appName = 'AbsenKu', mode = 'gps' }: { appName?: string; mode?: 'gps' | 'wifi' }) {
+  const isWifiMode = mode === 'wifi'
   const [orgCode, setOrgCode] = useState('')
   const [org, setOrg] = useState<Org | null>(null)
   const [step, setStep] = useState<Step>('org')
@@ -383,7 +384,11 @@ export default function AbsenClient({ appName = 'AbsenKu' }: { appName?: string 
       // sinyal GPS cuma buat lihat daftar karyawan.
       setStep('scan')
 
-      if (locations.length > 0) {
+      if (isWifiMode) {
+        // Mode WiFi — verifikasi via IP jaringan kantor di server, bukan GPS.
+        // Langsung allow scan; server-side check di /api/public-attendance yang guard.
+        setLocationStatus('inside')
+      } else if (locations.length > 0) {
         // Fire and forget — checkLocation set state sendiri saat selesai.
         void checkLocation(locations)
       } else {
@@ -565,12 +570,15 @@ export default function AbsenClient({ appName = 'AbsenKu' }: { appName?: string 
           photo_base64: base64,
           face_verified: true,
           face_confidence: employeeData.similarity,
-          latitude: userLocation?.lat ?? null,
-          longitude: userLocation?.lng ?? null,
-          accuracy: gpsAccuracy,
-          gps_samples: gpsSamples,
-          gps_jitter: gpsJitter,
-          gps_mock: gpsMockDetected,
+          attendance_mode: isWifiMode ? 'wifi' : 'gps',
+          ...(isWifiMode ? {} : {
+            latitude: userLocation?.lat ?? null,
+            longitude: userLocation?.lng ?? null,
+            accuracy: gpsAccuracy,
+            gps_samples: gpsSamples,
+            gps_jitter: gpsJitter,
+            gps_mock: gpsMockDetected,
+          }),
           device_fingerprint: getDeviceFingerprint(),
         }),
       })
@@ -860,7 +868,14 @@ export default function AbsenClient({ appName = 'AbsenKu' }: { appName?: string 
                       </div>
                     )}
 
-                    {locationStatus === 'inside' && officeLocations.length > 0 && (
+                    {isWifiMode && (
+                      <div className="bg-cyan-50 border border-cyan-200 text-cyan-700 px-4 py-2 rounded-xl text-xs flex items-center gap-2">
+                        <span className="shrink-0">📶</span>
+                        <span>Mode WiFi aktif — verifikasi via jaringan kantor (IP).</span>
+                      </div>
+                    )}
+
+                    {!isWifiMode && locationStatus === 'inside' && officeLocations.length > 0 && (
                       <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-2 rounded-xl text-xs flex items-center gap-2">
                         <MapPin className="w-3.5 h-3.5 shrink-0" />
                         <span>Lokasi terverifikasi — Anda berada di area kantor</span>
@@ -956,8 +971,8 @@ export default function AbsenClient({ appName = 'AbsenKu' }: { appName?: string 
                 </div>
               )}
 
-              {/* GPS debug info — always visible when geofence is configured */}
-              {officeLocations.length > 0 && (
+              {/* GPS debug info — always visible when geofence is configured (hidden in wifi mode) */}
+              {!isWifiMode && officeLocations.length > 0 && (
                 <div className="bg-white rounded-2xl shadow-2xl overflow-hidden">
                   <div className="px-5 py-4 border-b border-gray-100">
                     <h3 className="text-xs font-bold text-gray-700 uppercase tracking-wide flex items-center gap-2">

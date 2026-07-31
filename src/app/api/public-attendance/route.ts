@@ -72,7 +72,7 @@ export async function POST(req: NextRequest) {
   const {
     user_id, org_code, photo_base64, face_verified, face_confidence,
     latitude, longitude, accuracy, gps_samples, gps_jitter, gps_mock,
-    device_fingerprint,
+    device_fingerprint, attendance_mode,
   } = body
 
   if (!user_id || !org_code || !photo_base64) {
@@ -92,6 +92,41 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Kode perusahaan tidak valid' }, { status: 404 })
   }
 
+  // ─── Mode WiFi: validasi via IP whitelist, skip GPS ───────────────────────
+  // Absensi dari jaringan kantor (verifikasi IP public). Cocok untuk device
+  // yang GPS-nya bermasalah (iPhone lawas, di dalam ruangan tanpa sinyal).
+  if (attendance_mode === 'wifi') {
+    const clientIp = getClientIp(req)
+    if (!clientIp || clientIp === 'unknown') {
+      return NextResponse.json(
+        { error: 'Tidak dapat mendeteksi IP Anda. Coba gunakan mode absensi standar (dengan GPS).' },
+        { status: 403 }
+      )
+    }
+    const { data: whitelist } = await admin
+      .from('office_ip_whitelist')
+      .select('ip_address, label')
+      .eq('org_id', org.id)
+
+    const whitelisted = (whitelist ?? []).map(w => w.ip_address)
+    if (!whitelisted.includes(clientIp)) {
+      return NextResponse.json(
+        {
+          error: `Akses ditolak. IP Anda (${clientIp}) tidak terdaftar sebagai jaringan kantor. Hubungi admin atau gunakan mode absensi reguler (GPS).`,
+        },
+        { status: 403 }
+      )
+    }
+    // IP match → allow, skip semua GPS validation
+    //gpsSuspected tetap false di mode wifi
+    return await saveAttendance({
+      admin, user_id, org_id: org.id, photo_base64, face_verified, face_confidence,
+      latitude: null, longitude: null, accuracy: null, gpsSuspected: false,
+      device_fingerprint, req,
+    })
+  }
+
+  // ─── Mode GPS (default): anti-spoof + geofence ───────────────────────────
   // Anti-spoof GPS validation. Real GPS has natural jitter antar sample dan
   // akurasi 5-50m. Fake GPS hampir selalu return koordinat identik (jitter=0)
   // atau akurasi terlalu sempurna (<3m). Android Chrome juga set isMockProvider.
@@ -158,6 +193,33 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  return await saveAttendance({
+    admin, user_id, org_id: org.id, photo_base64, face_verified, face_confidence,
+    latitude: latitude ?? null, longitude: longitude ?? null, accuracy: accuracy ?? null,
+    gpsSuspected, device_fingerprint, req,
+  })
+}
+
+// ─── Helper: simpan absensi (dipakai baik mode GPS maupun WiFi) ────────────
+async function saveAttendance(params: {
+  admin: ReturnType<typeof createAdminClient>
+  user_id: string
+  org_id: string
+  photo_base64: string
+  face_verified: boolean | null
+  face_confidence: number | null
+  latitude: number | null
+  longitude: number | null
+  accuracy: number | null
+  gpsSuspected: boolean
+  device_fingerprint: string | undefined
+  req: NextRequest
+}): Promise<Response> {
+  const {
+    admin, user_id, org_id, photo_base64, face_verified, face_confidence,
+    latitude, longitude, accuracy, gpsSuspected, device_fingerprint,
+  } = params
+
   // Validasi user
   const { data: profile } = await admin
     .from('profiles')
@@ -165,7 +227,7 @@ export async function POST(req: NextRequest) {
     .eq('id', user_id)
     .single()
 
-  if (!profile || profile.org_id !== org.id || !profile.is_active) {
+  if (!profile || profile.org_id !== org_id || !profile.is_active) {
     return NextResponse.json({ error: 'Karyawan tidak valid' }, { status: 403 })
   }
 
