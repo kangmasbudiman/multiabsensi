@@ -307,22 +307,32 @@ async function saveAttendance(params: {
     }
   }
 
-  // 3. Fallback ke default shift departemen (departments.default_shift_id)
+  // 3. Fallback ke default shift departemen (department_shifts many-to-many)
   //    Buat karyawan yang belum di-assign shift individual — misal bagian
-  //    Management/HRD/IT yang shift-nya tetap Senin–Jumat.
+  //    Management/HRD/IT yang jam-nya tetap. Departemen bisa punya banyak shift
+  //    dengan work_days berbeda (Senin-Jumat full time + Sabtu half day).
+  //    Lookup pilih shift yang work_days-nya cocok dengan hari ini.
   if (!shiftId && !todayIsOff) {
-    const { data: deptRow } = await admin
+    const { data: profileDept } = await admin
       .from('profiles')
-      .select('department_id, departments(default_shift_id, shifts(work_days))')
+      .select('department_id')
       .eq('id', user_id)
       .maybeSingle()
 
-    const dept = Array.isArray(deptRow?.departments) ? deptRow?.departments?.[0] : deptRow?.departments
-    if (deptRow?.department_id && dept?.default_shift_id) {
-      const shiftRow = Array.isArray(dept.shifts) ? dept.shifts[0] : dept.shifts
-      const workDays: number[] = shiftRow?.work_days ?? [1, 2, 3, 4, 5]
-      if (workDays.includes(todayDow)) {
-        shiftId = dept.default_shift_id
+    if (profileDept?.department_id) {
+      const { data: deptShifts } = await admin
+        .from('department_shifts')
+        .select('shift_id, shifts(work_days)')
+        .eq('department_id', profileDept.department_id)
+
+      // Cari shift pertama yang work_days-nya include hari ini
+      for (const ds of deptShifts ?? []) {
+        const shiftRow = Array.isArray(ds.shifts) ? ds.shifts[0] : ds.shifts
+        const workDays: number[] = shiftRow?.work_days ?? [1, 2, 3, 4, 5]
+        if (workDays.includes(todayDow)) {
+          shiftId = ds.shift_id
+          break
+        }
       }
     }
   }

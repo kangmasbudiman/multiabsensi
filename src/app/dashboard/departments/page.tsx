@@ -9,12 +9,15 @@ export default async function DepartmentsPage() {
   const [deptResult, shiftResult] = await Promise.all([
     supabase
       .from('departments')
-      .select('id, name, description, default_shift_id, shifts(id, name), created_at')
+      .select(`
+        id, name, description, created_at,
+        department_shifts(shift_id, shifts(id, name, start_time, end_time, work_days))
+      `)
       .eq('org_id', profile!.org_id)
       .order('name'),
     supabase
       .from('shifts')
-      .select('id, name, start_time, end_time')
+      .select('id, name, start_time, end_time, work_days')
       .eq('org_id', profile!.org_id)
       .order('name'),
   ])
