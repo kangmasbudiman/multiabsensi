@@ -287,9 +287,9 @@ export default function ReportsClient({
                 {dateStrings.map((ds, i) => {
                   const day = new Date(ds + 'T00:00:00')
                   const dow = day.getDay()
-                  const isWeekend = dow === 0 || dow === 6
+                  const isSunday = dow === 0
                   return (
-                    <th key={ds} className={`px-1 py-2 text-center text-[10px] font-semibold uppercase ${isWeekend ? 'text-red-400 bg-red-50/50' : 'text-gray-500'}`}>
+                    <th key={ds} className={`px-1 py-2 text-center text-[10px] font-semibold uppercase ${isSunday ? 'text-red-400 bg-red-50/50' : 'text-gray-500'}`}>
                       <div>{i + 1}</div>
                       <div className="text-[9px] font-normal">{DAY_ABBR[dow]}</div>
                     </th>
@@ -322,11 +322,11 @@ export default function ReportsClient({
                       const att = empAttMap?.get(ds)
                       const day = new Date(ds + 'T00:00:00')
                       const dow = day.getDay()
-                      const isWeekend = dow === 0 || dow === 6
+                      const isSunday = dow === 0
 
                       if (!att) {
                         return (
-                          <td key={ds} className={`px-1 py-2 text-center text-[10px] ${isWeekend ? 'bg-red-50/30' : ''}`}>
+                          <td key={ds} className={`px-1 py-2 text-center text-[10px] ${isSunday ? 'bg-red-50/30' : ''}`}>
                             <span className="text-gray-200">·</span>
                           </td>
                         )
@@ -338,9 +338,9 @@ export default function ReportsClient({
                         const ci = fmtTime(att.check_in_time)
                         const co = fmtTime(att.check_out_time)
                         return (
-                          <td key={ds} className={`px-1 py-2 text-center text-[9px] leading-tight ${s.cellClass}`}>
-                            <div className="font-semibold">{ci || '·'}</div>
-                            <div className="text-gray-500">{co || '·'}</div>
+                          <td key={ds} className={`px-1 py-2 text-center text-[11px] leading-tight ${s.cellClass}`}>
+                            <div className="font-bold text-emerald-700">{ci || '·'}</div>
+                            <div className="font-bold text-blue-700">{co || '·'}</div>
                           </td>
                         )
                       }
