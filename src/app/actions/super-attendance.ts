@@ -222,22 +222,60 @@ export async function overrideAttendance(opts: {
     .eq('date', opts.date)
     .maybeSingle()
 
+  // Kalau existing row nggak punya shift_id, cari shift aktif user utk tanggal ini
+  // biar trigger calculate_attendance_status bisa fire (calc late_minutes & status)
+  let shiftId = existing?.shift_id ?? null
+  if (!shiftId) {
+    const { data: roster } = await admin
+      .from('shift_schedules')
+      .select('shift_id')
+      .eq('user_id', opts.userId)
+      .eq('date', opts.date)
+      .maybeSingle()
+    if (roster?.shift_id) {
+      shiftId = roster.shift_id
+    } else {
+      const { data: empShift } = await admin
+        .from('employee_shifts')
+        .select('shift_id')
+        .eq('user_id', opts.userId)
+        .eq('is_active', true)
+        .lte('effective_date', opts.date)
+        .or(`end_date.is.null,end_date.gte.${opts.date}`)
+        .order('effective_date', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (empShift?.shift_id) shiftId = empShift.shift_id
+    }
+  }
+
+  const upsertPayload: Record<string, unknown> = {
+    user_id: opts.userId,
+    date: opts.date,
+    check_in_time: checkIn,
+    check_out_time: checkOut,
+    notes: opts.notes?.trim() || null,
+    is_verified: true,
+    verified_by: actorId,
+    method: 'manual_override',
+  }
+
+  if (shiftId) {
+    upsertPayload.shift_id = shiftId
+  } else if (checkIn) {
+    // Shift tetap nggak ketemu → trigger nggak fire → set status manual biar muncul di laporan
+    upsertPayload.status = 'hadir'
+  }
+
   const { error } = await admin
     .from('attendances')
-    .upsert({
-      user_id: opts.userId,
-      date: opts.date,
-      check_in_time: checkIn,
-      check_out_time: checkOut,
-      notes: opts.notes?.trim() || null,
-      is_verified: true,
-      verified_by: actorId,
-      // Pertahankan shift_id kalau sudah ada (trigger butuh shift_id buat calc late_minutes)
-      ...(existing?.shift_id ? { shift_id: existing.shift_id } : {}),
-    }, { onConflict: 'user_id,date' })
+    .upsert(upsertPayload, { onConflict: 'user_id,date' })
 
   if (error) return { error: error.message }
 
   revalidatePath('/dashboard/super-attendance')
+  revalidatePath('/dashboard/attendance')
+  revalidatePath('/dashboard/reports')
+  revalidatePath('/dashboard')
   return { success: true }
 }
