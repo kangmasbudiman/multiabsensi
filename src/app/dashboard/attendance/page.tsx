@@ -5,6 +5,7 @@ import { id } from 'date-fns/locale'
 import AttendanceClient from './AttendanceClient'
 
 export const dynamic = 'force-dynamic'
+export const revalidate = 0
 
 export default async function AttendancePage({
   searchParams,
@@ -26,17 +27,24 @@ export default async function AttendancePage({
   const page = parseInt(params.page ?? '1')
   const pageSize = 20
 
-  // Ambil semua karyawan aktif (pakai admin client bypass RLS)
-  const { data: employees } = await admin
-    .from('profiles')
-    .select('id, full_name, employee_id, position, avatar_url')
-    .eq('org_id', orgId)
-    .eq('role', 'employee')
-    .eq('is_active', true)
-    .order('full_name')
+  // Ambil semua karyawan aktif (paginate bypass 1000-row cap Supabase Cloud)
+  const employees: Array<{ id: string; full_name: string; employee_id: string | null; position: string | null; avatar_url: string | null }> = []
+  for (let from = 0; from < 50000; from += 1000) {
+    const { data: empPage } = await admin
+      .from('profiles')
+      .select('id, full_name, employee_id, position, avatar_url')
+      .eq('org_id', orgId)
+      .eq('role', 'employee')
+      .eq('is_active', true)
+      .order('full_name')
+      .range(from, from + 999)
+    if (!empPage?.length) break
+    employees.push(...empPage)
+    if (empPage.length < 1000) break
+  }
 
   // Ambil absensi (admin client bypass RLS)
-  const employeeIds = (employees ?? []).map(e => e.id)
+  const employeeIds = employees.map(e => e.id)
   const { data: attendances, error: attError } = await admin
     .from('attendances')
     .select('user_id, check_in_time, check_out_time, check_in_lat, check_in_lng, check_in_accuracy, status, is_lembur, notes, check_in_photo_url, check_out_photo_url, face_verification_status, face_confidence, method, photo_purged_at, is_gps_suspected')
@@ -54,7 +62,7 @@ export default async function AttendancePage({
 
   // Night shift check: for employees without attendance today,
   // check if they have an active night shift from yesterday (not yet checked out)
-  const employeesWithoutAttendance = (employees ?? []).filter(e => !attendanceMap.has(e.id))
+  const employeesWithoutAttendance = employees.filter(e => !attendanceMap.has(e.id))
   let nightShiftFromYesterday = new Map<string, { check_in_time: string; shift_name: string }>()
 
   if (employeesWithoutAttendance.length > 0) {
@@ -80,7 +88,7 @@ export default async function AttendancePage({
   }
 
   // Gabungkan data
-  const rows = (employees ?? []).map(emp => ({
+  const rows = employees.map(emp => ({
     ...emp,
     attendance: attendanceMap.get(emp.id) ?? null,
     night_shift: nightShiftFromYesterday.get(emp.id) ?? null,
