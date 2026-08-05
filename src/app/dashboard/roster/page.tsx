@@ -1,4 +1,5 @@
 import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/admin'
 import { cookies } from 'next/headers'
 import RosterClient from './RosterClient'
 
@@ -11,6 +12,7 @@ export default async function RosterPage({ searchParams }: { searchParams: Promi
   const year = parseInt(params.year ?? String(now.getFullYear()))
 
   const supabase = await createClient()
+  const admin = createAdminClient()
   const { data: { user } } = await supabase.auth.getUser()
   const { data: profile } = await supabase
     .from('profiles')
@@ -19,12 +21,25 @@ export default async function RosterPage({ searchParams }: { searchParams: Promi
     .single()
 
   // Super_admin yang lagi inspect org lain: override org_id pakai inspect_org_id
-  // dari cookie. Tanpa ini, roster page bakal query org_id null → data kosong.
+  // dari cookie. Kalau super_admin tanpa cookie (belum inspect org manapun),
+  // fallback ke org pertama (same logic dengan layout.tsx) supaya roster-nya
+  // nggak kosong. Tanpa fallback ini, orgId=null → query kosong → user nggak
+  // bisa lihat data walau udah assign.
   let orgId = profile!.org_id
   if (profile!.role === 'super_admin') {
     const jar = await cookies()
     const inspectId = jar.get('inspect_org_id')?.value
-    if (inspectId) orgId = inspectId
+    if (inspectId) {
+      orgId = inspectId
+    } else if (!orgId) {
+      const { data: firstOrg } = await admin
+        .from('organizations')
+        .select('id')
+        .order('created_at', { ascending: true })
+        .limit(1)
+        .maybeSingle()
+      if (firstOrg) orgId = firstOrg.id
+    }
   }
 
   const isDeptHead = profile!.role === 'dept_head' || profile!.position === 'kepala_ruangan'
@@ -36,7 +51,7 @@ export default async function RosterPage({ searchParams }: { searchParams: Promi
   const startDate = `${year}-${String(month).padStart(2, '0')}-01`
   const endDate = `${year}-${String(month).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
 
-  let empQuery = supabase
+  let empQuery = admin
     .from('profiles')
     .select('id, full_name, employee_id, department_id, departments(name)')
     .eq('org_id', orgId)
@@ -61,7 +76,7 @@ export default async function RosterPage({ searchParams }: { searchParams: Promi
     for (let i = 0; i < MAX_PAGES; i++) {
       const from = i * PAGE_SIZE
       const to = (i + 1) * PAGE_SIZE - 1
-      const { data, error } = await supabase
+      const { data, error } = await admin
         .from('shift_schedules')
         .select('user_id, shift_id, date, is_off')
         .eq('org_id', orgId)
@@ -78,9 +93,9 @@ export default async function RosterPage({ searchParams }: { searchParams: Promi
 
   const [{ data: employees }, { data: shifts }, { data: departments }, { data: holidays }, schedulesRes] = await Promise.all([
     empQuery,
-    supabase.from('shifts').select('*').eq('org_id', orgId).order('start_time'),
-    supabase.from('departments').select('id, name').eq('org_id', orgId).order('name'),
-    supabase.from('holidays')
+    admin.from('shifts').select('*').eq('org_id', orgId).order('start_time'),
+    admin.from('departments').select('id, name').eq('org_id', orgId).order('name'),
+    admin.from('holidays')
       .select('date, name, is_national')
       .eq('org_id', orgId)
       .gte('date', `${year}-01-01`)
