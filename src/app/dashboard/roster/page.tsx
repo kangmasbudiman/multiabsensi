@@ -50,18 +50,33 @@ export default async function RosterPage({ searchParams }: { searchParams: Promi
 
   // Supabase Cloud nge-cap response di 1000 rows (PostgREST max-rows config,
   // nggak bisa di-override dari client walau .limit(N) > 1000). Untuk bypass,
-  // kita hit API beberapa kali pakai .range() — masing-masing minta 1000 rows.
-  // 5 pages x 1000 = max 5000 rows (cukup buat ~160 karyawan x 31 hari).
+  // kita loop .range() sampai halaman berikutnya kosong — jadi nggak ada batas
+  // hard-coded jumlah baris yang bisa di-load.
   const PAGE_SIZE = 1000
-  const MAX_PAGES = 5
+  const MAX_PAGES = 100 // safety net: 100k rows
 
-  const [
-    { data: employees },
-    { data: shifts },
-    { data: departments },
-    { data: holidays },
-    ...schedulePages
-  ] = await Promise.all([
+  async function paginateSchedule() {
+    const all: any[] = []
+    let firstError: unknown = null
+    for (let i = 0; i < MAX_PAGES; i++) {
+      const from = i * PAGE_SIZE
+      const to = (i + 1) * PAGE_SIZE - 1
+      const { data, error } = await supabase
+        .from('shift_schedules')
+        .select('user_id, shift_id, date, is_off')
+        .eq('org_id', orgId)
+        .gte('date', startDate)
+        .lte('date', endDate)
+        .range(from, to)
+      if (error && !firstError) firstError = error
+      if (!data?.length) break
+      all.push(...(data as any[]))
+      if (data.length < PAGE_SIZE) break
+    }
+    return { data: all, error: firstError }
+  }
+
+  const [{ data: employees }, { data: shifts }, { data: departments }, { data: holidays }, schedulesRes] = await Promise.all([
     empQuery,
     supabase.from('shifts').select('*').eq('org_id', orgId).order('start_time'),
     supabase.from('departments').select('id, name').eq('org_id', orgId).order('name'),
@@ -70,18 +85,11 @@ export default async function RosterPage({ searchParams }: { searchParams: Promi
       .eq('org_id', orgId)
       .gte('date', `${year}-01-01`)
       .lte('date', `${year}-12-31`),
-    ...Array.from({ length: MAX_PAGES }, (_, i) =>
-      supabase.from('shift_schedules')
-        .select('user_id, shift_id, date, is_off')
-        .eq('org_id', orgId)
-        .gte('date', startDate)
-        .lte('date', endDate)
-        .range(i * PAGE_SIZE, (i + 1) * PAGE_SIZE - 1)
-    ),
+    paginateSchedule(),
   ])
 
-  const schedulesErr = schedulePages.find(p => p.error)?.error
-  const schedules = schedulePages.flatMap(p => p.data ?? [])
+  const schedulesErr = schedulesRes.error
+  const schedules = schedulesRes.data ?? []
 
   // Debug: log di terminal server (output `npm run dev`) — kalau select
   // shift_schedules error atau kosong padahal harusnya ada data, kelihatan di sini.
