@@ -18,6 +18,7 @@ const superAdminGroups: NavGroup[] = [
       { href: '/dashboard', label: 'Dashboard', icon: '📊' },
       { href: '/dashboard/companies', label: 'Manajemen Perusahaan', icon: '🏭' },
       { href: '/dashboard/super-attendance', label: 'Manajemen Absensi', icon: '📋' },
+      { href: '/dashboard/custom-attendance', label: 'Link Absensi Custom', icon: '🔗' },
       { href: '/dashboard/qr-attendance', label: 'QR Check-in', icon: '📱' },
       { href: '/dashboard/super-settings', label: 'Pengaturan Platform', icon: '🛡️' },
     ],
