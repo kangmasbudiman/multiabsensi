@@ -154,100 +154,6 @@ interface SidebarProps {
   isInspecting?: boolean
 }
 
-// Recent Attendance Widget — shows last 15 check-ins in sidebar
-function RecentAttendance({ orgId }: { orgId: string }) {
-  const [records, setRecords] = useState<Array<{
-    check_in_time: string | null
-    check_out_time: string | null
-    face_verification_status: string | null
-    profiles: { full_name: string; employee_id: string | null } | null
-  }>>([])
-  const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    const fetchRecent = async () => {
-      try {
-        const supabase = createClient()
-        const today = new Date().toISOString().split('T')[0]
-        const { data } = await supabase
-          .from('attendances')
-          .select('check_in_time, check_out_time, face_verification_status, profiles!inner(full_name, employee_id)')
-          .eq('date', today)
-          .eq('profiles.org_id', orgId)
-          .not('check_in_time', 'is', null)
-          .order('check_in_time', { ascending: false })
-          .limit(15)
-        setRecords(data ?? [])
-      } catch {
-        // silently fail
-      } finally {
-        setLoading(false)
-      }
-    }
-    fetchRecent()
-    // Refresh every 30 seconds
-    const interval = setInterval(fetchRecent, 30_000)
-    return () => clearInterval(interval)
-  }, [orgId])
-
-  if (loading) {
-    return (
-      <div className="relative z-10 border-t border-white/10 px-3 py-3 shrink-0">
-        <p className="text-xs text-gray-500 uppercase tracking-widest font-semibold mb-2">Absen Terbaru</p>
-        <div className="flex items-center justify-center py-3">
-          <div className="w-4 h-4 border-2 border-teal-400 border-t-transparent rounded-full animate-spin" />
-        </div>
-      </div>
-    )
-  }
-
-  if (records.length === 0) {
-    return (
-      <div className="relative z-10 border-t border-white/10 px-3 py-3 shrink-0">
-        <p className="text-xs text-gray-500 uppercase tracking-widest font-semibold mb-2">Absen Terbaru</p>
-        <p className="text-xs text-gray-600 text-center py-2">Belum ada absensi hari ini</p>
-      </div>
-    )
-  }
-
-  return (
-    <div className="relative z-10 border-t border-white/10 px-3 py-3 shrink-0 max-h-[320px] overflow-y-auto">
-      <p className="text-xs text-gray-500 uppercase tracking-widest font-semibold mb-2 flex items-center gap-1.5">
-        <span className="w-1.5 h-1.5 bg-green-400 rounded-full animate-pulse" />
-        Absen Terbaru
-      </p>
-      <div className="space-y-1.5">
-        {records.map((rec, i) => {
-          const profile = rec.profiles
-          const name = profile?.full_name ?? 'Unknown'
-          const time = rec.check_in_time
-            ? new Date(rec.check_in_time).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' })
-            : '--:--'
-          const isCheckout = !!rec.check_out_time
-          const isVerified = rec.face_verification_status === 'verified'
-          return (
-            <div key={i} className="flex items-center gap-2 px-2 py-1.5 rounded-lg bg-white/5 hover:bg-white/8 transition-colors">
-              <div className="w-6 h-6 rounded-full bg-teal-500/20 flex items-center justify-center text-[10px] font-bold text-teal-300 shrink-0">
-                {name[0]?.toUpperCase()}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-xs text-white/80 font-medium truncate leading-tight">{name}</p>
-                <div className="flex items-center gap-1">
-                  <span className="text-[10px] text-gray-500">{time}</span>
-                  {isVerified && <span className="text-[9px]">🛡️</span>}
-                  {isCheckout && (
-                    <span className="text-[9px] text-blue-400 bg-blue-500/10 px-1 rounded">out</span>
-                  )}
-                </div>
-              </div>
-            </div>
-          )
-        })}
-      </div>
-    </div>
-  )
-}
-
 export default function Sidebar({ profile, collapsed = false, isInspecting = false }: SidebarProps) {
   const pathname = usePathname()
   const router = useRouter()
@@ -445,11 +351,6 @@ export default function Sidebar({ profile, collapsed = false, isInspecting = fal
           <NavGroupSection key={group.title} group={group} />
         ))}
       </nav>
-
-      {/* Recent Attendance Widget — only for admin sidebar (not super admin, not collapsed) */}
-      {!collapsed && !isSuperAdmin && profile.org_id && (
-        <RecentAttendance orgId={profile.org_id} />
-      )}
 
       {/* Logout */}
       <div className={`relative z-10 border-t border-white/10 shrink-0 ${collapsed ? 'p-2' : 'p-4'}`}>

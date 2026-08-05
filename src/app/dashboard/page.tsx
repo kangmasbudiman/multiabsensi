@@ -4,7 +4,6 @@ import { id } from 'date-fns/locale'
 import AttendanceChart from './_components/AttendanceChart'
 import RunningText from '@/components/admin/RunningText'
 import StatCards from './_components/StatCards'
-import AttendanceRealtimeWrapper from '@/components/admin/AttendanceRealtimeWrapper'
 import Link from 'next/link'
 
 export const dynamic = 'force-dynamic'
@@ -432,8 +431,7 @@ async function KepalaRuanganDashboard({ supabase, orgId, departmentId, departmen
         </div>
       </Link>
 
-      {/* Realtime check-in notifications */}
-      <AttendanceRealtimeWrapper orgId={orgId} employeeIds={employeeIds} />
+      {/* Realtime check-in notifications removed — lihat di HP masing-masing */}
     </div>
   )
 }
@@ -759,8 +757,7 @@ async function AdminDashboard({ supabase, orgId }: { supabase: Awaited<ReturnTyp
         </div>
       </div>
 
-      {/* Realtime check-in notifications */}
-      <AttendanceRealtimeWrapper orgId={orgId} employeeIds={employeeIds} />
+      {/* Realtime check-in notifications removed — lihat di HP masing-masing */}
     </div>
   )
 }
