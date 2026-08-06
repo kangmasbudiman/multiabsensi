@@ -37,11 +37,20 @@ export async function GET(req: NextRequest) {
     if (yd && yd.shift_id) {
       const { data: shift } = await admin
         .from('shifts')
-        .select('crosses_midnight')
+        .select('crosses_midnight, end_time')
         .eq('id', yd.shift_id)
         .single()
       if (shift?.crosses_midnight) {
-        yesterdayAtt = yd
+        // Konsisten dengan POST: hanya anggap record kemarin aktif kalau
+        // masih dalam window scheduled_end + 4 jam. Di luar itu, record stale.
+        const [eh, em] = String(shift.end_time).split(':').map(Number)
+        const scheduledEnd = new Date(`${yesterday}T00:00:00+07:00`)
+        scheduledEnd.setDate(scheduledEnd.getDate() + 1)
+        scheduledEnd.setHours(eh || 0, em || 0, 0, 0)
+        const maxCheckout = new Date(scheduledEnd.getTime() + 4 * 3_600_000)
+        if (now <= maxCheckout) {
+          yesterdayAtt = yd
+        }
       }
     }
   }
@@ -379,11 +388,22 @@ async function saveAttendance(params: {
       // Check if the shift crosses midnight
       const { data: shift } = await admin
         .from('shifts')
-        .select('crosses_midnight')
+        .select('crosses_midnight, end_time')
         .eq('id', yd.shift_id)
         .single()
       if (shift?.crosses_midnight) {
-        yesterdayRecord = yd
+        // Grace period: hanya anggap sebagai checkout shift kemarin kalau
+        // sekarang masih dalam window (scheduled_end + 4 jam). Di luar window,
+        // record open dianggap stale (kemungkinan lupa checkout) — supaya
+        // scan berikutnya bisa jadi check-in shift baru, bukan checkout salah.
+        const [eh, em] = String(shift.end_time).split(':').map(Number)
+        const scheduledEnd = new Date(`${yesterday}T00:00:00+07:00`)
+        scheduledEnd.setDate(scheduledEnd.getDate() + 1)
+        scheduledEnd.setHours(eh || 0, em || 0, 0, 0)
+        const maxCheckout = new Date(scheduledEnd.getTime() + 4 * 3_600_000)
+        if (now <= maxCheckout) {
+          yesterdayRecord = yd
+        }
       }
     }
   }
