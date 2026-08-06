@@ -25,7 +25,7 @@ export async function proxy(request: NextRequest) {
 
   const { data: { user } } = await supabase.auth.getUser()
   const pathname = request.nextUrl.pathname
-  const publicRoutes = ['/login', '/register', '/', '/absen', '/absen-kantor']
+  const publicRoutes = ['/login', '/register', '/', '/absen', '/absen-kantor', '/absen-custom']
   const isPublic = publicRoutes.includes(pathname) || pathname.startsWith('/qr-checkin/') || pathname.startsWith('/register/')
 
   if (!user && !isPublic) {
