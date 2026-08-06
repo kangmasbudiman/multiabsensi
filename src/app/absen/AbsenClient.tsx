@@ -196,16 +196,6 @@ export default function AbsenClient({ appName = 'AbsenKu', mode = 'gps' }: { app
   } | null>(null)
   const [submitting, setSubmitting] = useState(false)
 
-  // Recent attendance
-  const [recentAttendance, setRecentAttendance] = useState<Array<{
-    full_name: string
-    employee_id: string | null
-    position: string | null
-    check_in_time: string | null
-    check_out_time: string | null
-    face_verified: boolean
-  }>>([])
-
   // Load saved org code
   useEffect(() => {
     try {
@@ -225,16 +215,6 @@ export default function AbsenClient({ appName = 'AbsenKu', mode = 'gps' }: { app
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
-
-  // Fetch recent attendance whenever on scan step
-  useEffect(() => {
-    if (step === 'scan' && orgCode.trim()) {
-      fetch(`/api/public-recent-attendance?org_code=${encodeURIComponent(orgCode.trim())}`)
-        .then(r => r.json())
-        .then(d => setRecentAttendance(d.records ?? []))
-        .catch(() => {})
-    }
-  }, [step, orgCode])
 
   // Camera lifecycle — only start if canScan
   useEffect(() => {
@@ -1035,67 +1015,6 @@ export default function AbsenClient({ appName = 'AbsenKu', mode = 'gps' }: { app
                   <div className="px-5 py-3 text-xs text-gray-600">
                     Belum ada lokasi kantor terdaftar untuk perusahaan ini. Geofence tidak aktif — siapa pun dari mana pun bisa absen sampai admin menambahkan lokasi di <strong>/dashboard/locations</strong>.
                   </div>
-                </div>
-              )}
-
-              {/* Recent Attendance Card — always shown */}
-              {org && (
-                <div className="bg-white rounded-2xl shadow-2xl overflow-hidden">
-                  <div className="px-5 py-4 border-b border-gray-100">
-                    <h3 className="text-sm font-bold text-gray-800 flex items-center gap-2">
-                      <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse" />
-                      Absen Terbaru Hari Ini
-                      {recentAttendance.length > 0 && (
-                        <span className="text-xs font-normal text-gray-400">({recentAttendance.length} karyawan)</span>
-                      )}
-                    </h3>
-                  </div>
-                  {recentAttendance.length === 0 ? (
-                    <div className="px-5 py-6 text-center">
-                      <p className="text-sm text-gray-400">Belum ada absensi hari ini</p>
-                      <p className="text-xs text-gray-300 mt-1">Jadilah yang pertama absen!</p>
-                    </div>
-                  ) : (
-                  <div className="divide-y divide-gray-50 max-h-[360px] overflow-y-auto">
-                    {recentAttendance.map((rec, i) => {
-                      const checkinTime = rec.check_in_time
-                        ? new Date(rec.check_in_time).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' })
-                        : null
-                      const checkoutTime = rec.check_out_time
-                        ? new Date(rec.check_out_time).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Jakarta' })
-                        : null
-                      return (
-                        <div key={i} className="px-5 py-3 flex items-center gap-3">
-                          <div className="w-9 h-9 rounded-full bg-teal-100 flex items-center justify-center text-xs font-bold text-teal-600 shrink-0">
-                            {rec.full_name[0]?.toUpperCase()}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-gray-800 truncate">{rec.full_name}</p>
-                            <p className="text-xs text-gray-400">
-                              {rec.employee_id && <span className="mr-2">{rec.employee_id}</span>}
-                              {rec.position && <span>{rec.position}</span>}
-                            </p>
-                          </div>
-                          <div className="flex items-center gap-1.5 shrink-0">
-                            {checkinTime && (
-                              <div className="flex items-center gap-1 bg-green-50 px-2 py-1 rounded-lg">
-                                <span className="text-[10px] text-green-600 font-medium">Masuk</span>
-                                <span className="text-xs font-mono text-gray-700">{checkinTime}</span>
-                              </div>
-                            )}
-                            {checkoutTime && (
-                              <div className="flex items-center gap-1 bg-blue-50 px-2 py-1 rounded-lg">
-                                <span className="text-[10px] text-blue-600 font-medium">Pulang</span>
-                                <span className="text-xs font-mono text-gray-700">{checkoutTime}</span>
-                              </div>
-                            )}
-                            {rec.face_verified && <span className="text-[10px]" title="Face verified">🛡️</span>}
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
-                  )}
                 </div>
               )}
 
