@@ -535,6 +535,7 @@ export default function EmployeesClient({ employees, departments, shifts, positi
           photo_base64: base64,
           descriptor: faceResult.descriptor,
           geometry: faceResult.geometry,
+          detection_score: faceResult.score,
         }),
       })
       const data = await res.json()

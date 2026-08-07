@@ -36,16 +36,40 @@ export async function POST(req: NextRequest) {
 
     // 2. Parse request
     const body = await req.json()
-    const { user_id, photo_base64, descriptor, geometry } = body as {
+    const { user_id, photo_base64, descriptor, geometry, detection_score } = body as {
       user_id?: string
       photo_base64?: string
       descriptor?: number[]
-      geometry?: unknown
+      geometry?: { normW?: number } | null
+      detection_score?: number
     }
 
     if (!user_id || !photo_base64 || !descriptor) {
       console.error('[register-face] Missing data:', { has_user_id: !!user_id, has_photo: !!photo_base64, has_descriptor: !!descriptor })
       return NextResponse.json({ error: 'Data tidak lengkap' }, { status: 400 })
+    }
+
+    // Quality gate (Phase 1): reject foto jelek supaya descriptor yang tersimpan
+    // representatif. Threshold moderat — bisa di-tune setelah observasi log.
+    // - detection_score: confidence face-api (0-1). <0.5 = banyak false detection.
+    // - normW: face width / image width. <0.25 = wajah terlalu kecil di frame.
+    const QUALITY_SCORE_MIN = 0.5
+    const QUALITY_FACE_WIDTH_MIN = 0.25
+    const faceWidthRatio = typeof geometry?.normW === 'number' ? geometry.normW : null
+
+    if (typeof detection_score !== 'number' || detection_score < QUALITY_SCORE_MIN) {
+      console.warn('[register-face] Quality reject low score:', { user_id, score: detection_score })
+      return NextResponse.json({
+        error: `Foto kurang jelas (confidence rendah). Foto ulang dengan pencahayaan lebih baik, wajah frontal dan jelas terlihat.`,
+        detail: { detection_score: detection_score ?? null, threshold: QUALITY_SCORE_MIN },
+      }, { status: 400 })
+    }
+    if (faceWidthRatio === null || faceWidthRatio < QUALITY_FACE_WIDTH_MIN) {
+      console.warn('[register-face] Quality reject small face:', { user_id, faceWidthRatio })
+      return NextResponse.json({
+        error: `Wajah terlalu kecil di frame. Mendekat ke kamera sehingga wajah minimal 25% dari lebar gambar.`,
+        detail: { face_width_ratio: faceWidthRatio, threshold: QUALITY_FACE_WIDTH_MIN },
+      }, { status: 400 })
     }
 
     // Validate descriptor is 128 floats

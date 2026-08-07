@@ -22,6 +22,8 @@ function centroid(points: Array<{ x: number; y: number }>): { x: number; y: numb
 export interface FaceResult {
   descriptor: number[]
   geometry: FaceGeometry | null
+  score: number
+  box: { x: number; y: number; width: number; height: number } | null
 }
 
 export interface FaceGeometry {
@@ -135,6 +137,13 @@ export async function detectAndExtract(
 
   return {
     descriptor: Array.from(detection.descriptor),
+    score: detection.detection.score,
+    box: {
+      x: detection.detection.box.x,
+      y: detection.detection.box.y,
+      width: detection.detection.box.width,
+      height: detection.detection.box.height,
+    },
     geometry: {
       aspectRatio: faceHeight / faceWidth,
       normX: box.x / imgWidth,

@@ -86,6 +86,7 @@ export async function POST(req: NextRequest) {
     photo_base64,
     descriptor,
     geometry,
+    detection_score,
   } = body as {
     token?: string
     full_name?: string
@@ -96,7 +97,8 @@ export async function POST(req: NextRequest) {
     phone?: string
     photo_base64?: string
     descriptor?: number[]
-    geometry?: unknown
+    geometry?: { normW?: number } | null
+    detection_score?: number
   }
 
   if (!token || !full_name || !photo_base64 || !descriptor) {
@@ -105,6 +107,24 @@ export async function POST(req: NextRequest) {
 
   if (!Array.isArray(descriptor) || descriptor.length !== 128) {
     return NextResponse.json({ error: 'Descriptor wajah tidak valid' }, { status: 400 })
+  }
+
+  // Quality gate (Phase 1): sama dengan /api/register-face
+  const QUALITY_SCORE_MIN = 0.5
+  const QUALITY_FACE_WIDTH_MIN = 0.25
+  const faceWidthRatio = typeof geometry?.normW === 'number' ? geometry.normW : null
+
+  if (typeof detection_score !== 'number' || detection_score < QUALITY_SCORE_MIN) {
+    console.warn('[public-registration] Quality reject low score:', { score: detection_score })
+    return NextResponse.json({
+      error: 'Foto kurang jelas. Foto ulang dengan pencahayaan lebih baik dan wajah terlihat jelas.',
+    }, { status: 400 })
+  }
+  if (faceWidthRatio === null || faceWidthRatio < QUALITY_FACE_WIDTH_MIN) {
+    console.warn('[public-registration] Quality reject small face:', { faceWidthRatio })
+    return NextResponse.json({
+      error: 'Wajah terlalu kecil. Mendekat ke kamera sehingga wajah minimal 25% dari lebar gambar.',
+    }, { status: 400 })
   }
 
   const link = await fetchValidLink(token)

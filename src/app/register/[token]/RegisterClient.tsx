@@ -117,6 +117,7 @@ export default function RegisterClient({ token, valid, reason, orgName, departme
           photo_base64: base64,
           descriptor: faceResult.descriptor,
           geometry: faceResult.geometry,
+          detection_score: faceResult.score,
         }),
       })
       const data = await res.json()
