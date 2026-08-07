@@ -44,9 +44,12 @@ export async function GET(req: NextRequest) {
         // Konsisten dengan POST: hanya anggap record kemarin aktif kalau
         // masih dalam window scheduled_end + 4 jam. Di luar itu, record stale.
         const [eh, em] = String(shift.end_time).split(':').map(Number)
-        const scheduledEnd = new Date(`${yesterday}T00:00:00+07:00`)
-        scheduledEnd.setDate(scheduledEnd.getDate() + 1)
-        scheduledEnd.setHours(eh || 0, em || 0, 0, 0)
+        // Hitung scheduled_end di Jakarta TZ tanpa pakai setDate/setHours
+        // (mereka pakai server-local TZ — Vercel UTC → hasilnya 17 jam lebih awal).
+        const [yy, mm, dd] = yesterday.split('-').map(Number)
+        const tomorrow = new Date(Date.UTC(yy, mm - 1, dd + 1))
+        const tomorrowStr = `${tomorrow.getUTCFullYear()}-${String(tomorrow.getUTCMonth() + 1).padStart(2, '0')}-${String(tomorrow.getUTCDate()).padStart(2, '0')}`
+        const scheduledEnd = new Date(`${tomorrowStr}T${String(eh || 0).padStart(2, '0')}:${String(em || 0).padStart(2, '0')}:00+07:00`)
         const maxCheckout = new Date(scheduledEnd.getTime() + 4 * 3_600_000)
         if (now <= maxCheckout) {
           yesterdayAtt = yd
@@ -397,9 +400,12 @@ async function saveAttendance(params: {
         // record open dianggap stale (kemungkinan lupa checkout) — supaya
         // scan berikutnya bisa jadi check-in shift baru, bukan checkout salah.
         const [eh, em] = String(shift.end_time).split(':').map(Number)
-        const scheduledEnd = new Date(`${yesterday}T00:00:00+07:00`)
-        scheduledEnd.setDate(scheduledEnd.getDate() + 1)
-        scheduledEnd.setHours(eh || 0, em || 0, 0, 0)
+        // Hitung scheduled_end di Jakarta TZ tanpa pakai setDate/setHours
+        // (mereka pakai server-local TZ — Vercel UTC → hasilnya 17 jam lebih awal).
+        const [yy, mm, dd] = yesterday.split('-').map(Number)
+        const tomorrow = new Date(Date.UTC(yy, mm - 1, dd + 1))
+        const tomorrowStr = `${tomorrow.getUTCFullYear()}-${String(tomorrow.getUTCMonth() + 1).padStart(2, '0')}-${String(tomorrow.getUTCDate()).padStart(2, '0')}`
+        const scheduledEnd = new Date(`${tomorrowStr}T${String(eh || 0).padStart(2, '0')}:${String(em || 0).padStart(2, '0')}:00+07:00`)
         const maxCheckout = new Date(scheduledEnd.getTime() + 4 * 3_600_000)
         if (now <= maxCheckout) {
           yesterdayRecord = yd
